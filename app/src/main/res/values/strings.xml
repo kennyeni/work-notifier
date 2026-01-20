@@ -27,4 +27,9 @@
     <string name="private_profile_badge">PRIVATE</string>
     <string name="show_more">Show more</string>
     <string name="show_less">Show less</string>
+
+    <!-- Accessibility Service -->
+    <string name="accessibility_service_description">Work Notifier uses this accessibility service ONLY to intercept notification events from all apps, including Private Space apps. This service does not monitor your screen, interactions, or any other accessibility features. It is solely used for notification interception to display in the app\'s notification history.</string>
+    <string name="enable_accessibility_access">Enable Accessibility Service</string>
+    <string name="accessibility_service_info">For enhanced notification access (including Private Space), please enable the Accessibility Service.\n\nThis service is used ONLY for notification interception, not for monitoring your device.</string>
 </resources>

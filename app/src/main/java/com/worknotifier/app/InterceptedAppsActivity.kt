@@ -31,6 +31,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
     private lateinit var tvEmptyState: TextView
     private lateinit var btnEnablePermission: Button
+    private lateinit var btnEnableAccessibility: Button
     private lateinit var adapter: AppsAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,15 +47,20 @@ class InterceptedAppsActivity : AppCompatActivity() {
         tvStatus = findViewById(R.id.tvStatus)
         tvEmptyState = findViewById(R.id.tvEmptyState)
         btnEnablePermission = findViewById(R.id.btnEnablePermission)
+        btnEnableAccessibility = findViewById(R.id.btnEnableAccessibility)
 
         // Set up RecyclerView
         adapter = AppsAdapter(this)
         rvApps.layoutManager = LinearLayoutManager(this)
         rvApps.adapter = adapter
 
-        // Set up permission button
+        // Set up permission buttons
         btnEnablePermission.setOnClickListener {
             openNotificationListenerSettings()
+        }
+
+        btnEnableAccessibility.setOnClickListener {
+            openAccessibilitySettings()
         }
 
         // Check permission status
@@ -80,8 +86,11 @@ class InterceptedAppsActivity : AppCompatActivity() {
      * Checks if the notification listener permission is granted.
      */
     private fun checkPermissionStatus() {
-        val isEnabled = isNotificationListenerEnabled()
-        btnEnablePermission.visibility = if (isEnabled) View.GONE else View.VISIBLE
+        val isNotificationListenerEnabled = isNotificationListenerEnabled()
+        val isAccessibilityEnabled = isAccessibilityServiceEnabled()
+
+        btnEnablePermission.visibility = if (isNotificationListenerEnabled) View.GONE else View.VISIBLE
+        btnEnableAccessibility.visibility = if (isAccessibilityEnabled) View.GONE else View.VISIBLE
     }
 
     /**
@@ -94,10 +103,27 @@ class InterceptedAppsActivity : AppCompatActivity() {
     }
 
     /**
+     * Checks if AccessibilityService is enabled.
+     */
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val cn = ComponentName(this, NotificationAccessibilityService::class.java)
+        val flat = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+        return flat != null && flat.contains(cn.flattenToString())
+    }
+
+    /**
      * Opens the notification listener settings screen.
      */
     private fun openNotificationListenerSettings() {
         val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+        startActivity(intent)
+    }
+
+    /**
+     * Opens the accessibility settings screen.
+     */
+    private fun openAccessibilitySettings() {
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
         startActivity(intent)
     }
 

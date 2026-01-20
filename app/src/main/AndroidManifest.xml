@@ -47,6 +47,19 @@
             </intent-filter>
         </service>
 
+        <!-- Accessibility Service for enhanced notification access (Private Space support) -->
+        <service
+            android:name=".NotificationAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
         <!-- Activity to display intercepted apps and notifications -->
         <activity
             android:name=".InterceptedAppsActivity"
