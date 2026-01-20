@@ -63,6 +63,17 @@ jobs:
     - name: Build with Gradle
       run: ./gradlew build --stacktrace --build-cache
 
+    - name: Verify keystore was created
+      run: |
+        if [ -f app/debug.keystore ]; then
+          echo "✓ Keystore created successfully"
+          ls -lh app/debug.keystore
+          keytool -list -v -keystore app/debug.keystore -storepass android | head -20
+        else
+          echo "✗ Keystore not found!"
+          exit 1
+        fi
+
     - name: Run Lint
       run: ./gradlew lint
 
