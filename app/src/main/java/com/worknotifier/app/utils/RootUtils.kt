@@ -92,7 +92,7 @@ object RootUtils {
         val profileInfo = mutableMapOf<Int, String>()
 
         // Parse output like: "UserInfo{0:Owner:c13} running"
-        val userInfoPattern = Regex("UserInfo\\{(\\d+):([^:]+):.*}")
+        val userInfoPattern = Regex("UserInfo\\{(\\d+):([^:]+):.*\\}")
         output.lines().forEach { line ->
             userInfoPattern.find(line)?.let { matchResult ->
                 val userId = matchResult.groupValues[1].toIntOrNull()
