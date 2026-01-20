@@ -84,6 +84,3 @@ lint/tmp/
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# Gradle wrapper jar (we'll generate this locally)
-gradle/wrapper/gradle-wrapper.jar
