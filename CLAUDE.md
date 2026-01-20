@@ -29,13 +29,17 @@ work-notifier/
 │   └── proguard-rules.pro
 ├── gradle/
 │   └── wrapper/
+│       ├── gradle-wrapper.jar             # Gradle wrapper JAR (required for builds)
 │       └── gradle-wrapper.properties
 ├── build.gradle                           # Project-level Gradle config
 ├── settings.gradle
 ├── gradle.properties
 ├── gradlew                                # Linux/Mac Gradle wrapper
 ├── gradlew.bat                            # Windows Gradle wrapper
+├── build-and-deploy.sh                    # Build & deploy script (Bash)
+├── build-and-deploy.ps1                   # Build & deploy script (PowerShell)
 ├── .gitignore
+├── .gitattributes                         # Git line ending configuration
 ├── CLAUDE.md                              # This file
 └── README.md
 ```
@@ -133,6 +137,39 @@ When a test notification is sent:
    # Add to PATH
    set PATH=%PATH%;%JAVA_HOME%\bin
    ```
+
+4. **ADB (Android Debug Bridge)** - Optional, for automated deployment
+   - Install via Android Studio, or
+   - Download Android SDK Platform Tools
+   - Add to PATH for the build-and-deploy scripts
+
+### Quick Build & Deploy (Recommended)
+
+The project includes automated build-and-deploy scripts that build the APK and install it on a connected Android device:
+
+**Windows (PowerShell)**:
+```powershell
+powershell -ExecutionPolicy Bypass -File build-and-deploy.ps1
+```
+
+**Windows (Git Bash)**:
+```bash
+./build-and-deploy.sh
+```
+
+**Linux/Mac**:
+```bash
+./build-and-deploy.sh
+```
+
+These scripts will:
+1. Clean previous builds
+2. Build debug APK
+3. Check for connected Android devices
+4. Uninstall previous version (if exists)
+5. Install the new APK on your device
+
+**Requirements**: ADB must be installed and in your PATH.
 
 ### Building Locally (Windows)
 
@@ -239,6 +276,34 @@ To test Android Auto notifications:
 - Architecture: Simple Activity-based
 - Notification Framework: AndroidX Core (NotificationCompat)
 - Service Type: IntentService for background action handling
+
+### Cross-Platform Compatibility (Windows)
+
+The project is fully compatible with Windows development environments:
+
+**Line Ending Management**:
+- `.gitattributes` file ensures correct line endings across platforms
+- `gradlew.bat` uses CRLF (Windows line endings)
+- `gradlew` and `.sh` files use LF (Unix line endings)
+- This is handled automatically by Git on clone/checkout
+
+**Build Scripts**:
+- `gradlew.bat` - Native Windows batch file
+- `build-and-deploy.ps1` - Native PowerShell script (recommended for Windows)
+- `build-and-deploy.sh` - Bash script (works with Git Bash on Windows)
+
+**Testing on Windows**:
+To verify the build works correctly on Windows:
+1. Clone the repository
+2. Verify line endings: `gradlew.bat` should have CRLF, `gradlew` should have LF
+3. Run: `gradlew.bat assembleDebug`
+4. Or use the automated script: `powershell -ExecutionPolicy Bypass -File build-and-deploy.ps1`
+
+**Common Windows Issues**:
+- **Issue**: "Could not find or load main class org.gradle.wrapper.GradleWrapperMain"
+  - **Solution**: Ensure `gradle/wrapper/gradle-wrapper.jar` is present (should be in the repository)
+- **Issue**: "Permission denied" when running `gradlew.bat`
+  - **Solution**: Run PowerShell or Command Prompt as Administrator, or check antivirus settings
 
 ## Future Enhancements
 

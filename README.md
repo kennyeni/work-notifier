@@ -13,7 +13,34 @@ An Android application that sends test notifications compatible with **Android A
 - Android 10 (API 29) or higher
 - Android 15 (API 35) target support
 
-## Build Instructions
+## Quick Start - Build & Deploy
+
+The easiest way to build and install the app on your Android device:
+
+### Windows (PowerShell)
+```powershell
+powershell -ExecutionPolicy Bypass -File build-and-deploy.ps1
+```
+
+### Windows (Git Bash)
+```bash
+./build-and-deploy.sh
+```
+
+### Linux/Mac
+```bash
+./build-and-deploy.sh
+```
+
+This automated script will:
+- Clean and build the debug APK
+- Check for connected Android devices
+- Uninstall previous version (if exists)
+- Install the new APK on your device
+
+**Requirements**: ADB (Android Debug Bridge) must be installed and in your PATH
+
+## Manual Build Instructions
 
 ### Windows
 ```cmd
@@ -25,7 +52,7 @@ gradlew.bat assembleDebug
 ./gradlew assembleDebug
 ```
 
-## Installation
+## Manual Installation
 
 1. Build the APK using the instructions above
 2. Install on your Android device: `adb install app/build/outputs/apk/debug/app-debug.apk`
