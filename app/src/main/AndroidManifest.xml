@@ -36,6 +36,27 @@
         <service
             android:name=".MessagingService"
             android:exported="false" />
+
+        <!-- Notification Listener Service to intercept notifications -->
+        <service
+            android:name=".NotificationInterceptorService"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Activity to display intercepted apps and notifications -->
+        <activity
+            android:name=".InterceptedAppsActivity"
+            android:exported="false"
+            android:label="@string/intercepted_apps_title"
+            android:parentActivityName=".MainActivity">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".MainActivity" />
+        </activity>
     </application>
 
 </manifest>
