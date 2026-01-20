@@ -4,6 +4,8 @@ import android.app.Notification
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Process
+import android.os.UserHandle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -53,6 +55,9 @@ class NotificationInterceptorService : NotificationListenerService() {
             // Get app name
             val appName = getAppName(packageName)
 
+            // Check if notification is from work profile
+            val isWorkProfile = isFromWorkProfile(sbn)
+
             // Create intercepted notification object
             val interceptedNotification = InterceptedNotification(
                 packageName = packageName,
@@ -60,7 +65,8 @@ class NotificationInterceptorService : NotificationListenerService() {
                 title = title,
                 text = text,
                 timestamp = timestamp,
-                key = key
+                key = key,
+                isWorkProfile = isWorkProfile
             )
 
             // Store the notification
@@ -93,6 +99,21 @@ class NotificationInterceptorService : NotificationListenerService() {
             packageManager.getApplicationLabel(applicationInfo).toString()
         } catch (e: PackageManager.NameNotFoundException) {
             packageName // Fallback to package name if app name not found
+        }
+    }
+
+    /**
+     * Checks if a notification is from a work profile (managed profile).
+     * Returns true if the notification comes from a different user profile than the current one.
+     */
+    private fun isFromWorkProfile(sbn: StatusBarNotification): Boolean {
+        return try {
+            val notificationUser = sbn.user
+            val currentUser = Process.myUserHandle()
+            notificationUser != currentUser
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking work profile", e)
+            false
         }
     }
 }
