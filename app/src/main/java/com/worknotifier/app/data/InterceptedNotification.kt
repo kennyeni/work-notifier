@@ -1,6 +1,15 @@
 package com.worknotifier.app.data
 
 /**
+ * Profile type for the notification source.
+ */
+enum class ProfileType {
+    PERSONAL,
+    WORK,
+    PRIVATE
+}
+
+/**
  * Data class representing an intercepted notification.
  */
 data class InterceptedNotification(
@@ -10,8 +19,12 @@ data class InterceptedNotification(
     val text: String?,
     val timestamp: Long,
     val key: String,
-    val isWorkProfile: Boolean = false
+    val profileType: ProfileType = ProfileType.PERSONAL,
+    val userId: Int = 0
 ) {
+    // Backwards compatibility
+    val isWorkProfile: Boolean
+        get() = profileType == ProfileType.WORK
     companion object {
         /**
          * Creates a short summary of the notification for display.

@@ -20,6 +20,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.worknotifier.app.data.InterceptedNotification
 import com.worknotifier.app.data.NotificationStorage
+import com.worknotifier.app.data.ProfileType
 
 /**
  * Activity that displays all intercepted apps and their recent notifications.
@@ -177,9 +178,32 @@ class InterceptedAppsActivity : AppCompatActivity() {
                 val appName = notifications.firstOrNull()?.appName ?: packageName
                 tvAppName.text = appName
 
-                // Show work profile badge if any notification is from work profile
-                val hasWorkProfile = notifications.any { it.isWorkProfile }
-                tvWorkProfileBadge.visibility = if (hasWorkProfile) View.VISIBLE else View.GONE
+                // Show appropriate profile badge
+                val profileTypes = notifications.map { it.profileType }.distinct()
+                when {
+                    profileTypes.contains(ProfileType.PRIVATE) -> {
+                        // Show PRIVATE badge (takes priority if both exist)
+                        tvWorkProfileBadge.visibility = View.VISIBLE
+                        tvWorkProfileBadge.text = context.getString(R.string.private_profile_badge)
+                        tvWorkProfileBadge.setTextColor(
+                            ContextCompat.getColor(context, R.color.private_profile_badge)
+                        )
+                        tvWorkProfileBadge.setBackgroundResource(R.drawable.private_profile_badge_bg)
+                    }
+                    profileTypes.contains(ProfileType.WORK) -> {
+                        // Show WORK badge
+                        tvWorkProfileBadge.visibility = View.VISIBLE
+                        tvWorkProfileBadge.text = context.getString(R.string.work_profile_badge)
+                        tvWorkProfileBadge.setTextColor(
+                            ContextCompat.getColor(context, R.color.work_profile_badge)
+                        )
+                        tvWorkProfileBadge.setBackgroundResource(R.drawable.work_profile_badge_bg)
+                    }
+                    else -> {
+                        // No special profile, hide badge
+                        tvWorkProfileBadge.visibility = View.GONE
+                    }
+                }
 
                 // Set package name
                 tvPackageName.text = packageName
