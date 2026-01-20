@@ -77,11 +77,18 @@ jobs:
     - name: Run Lint
       run: ./gradlew lint
 
-    - name: Upload APK
+    - name: Upload App APK
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 7
+
+    - name: Upload Xposed Module APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: xposed-module-debug
+        path: xposed-module/build/outputs/apk/debug/xposed-module-debug.apk
         retention-days: 7
 
     - name: Upload Lint Report
