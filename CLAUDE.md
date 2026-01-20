@@ -227,21 +227,71 @@ These scripts will:
 
 ### GitHub Actions Build
 
-The project automatically builds on pull requests to `main` or `master` branches.
+The project includes three GitHub Actions workflows for automated CI/CD:
 
-**Workflow**: `.github/workflows/pr-build.yml`
+#### 1. PR Build Workflow (`.github/workflows/pr-build.yml`)
+
+Automatically builds on pull requests to `main` or `master` branches.
 
 **Build Steps**:
 1. Checkout code
 2. Set up JDK 17
-3. Grant execute permission for gradlew
-4. Build with Gradle
-5. Run Lint
-6. Upload APK and Lint reports as artifacts
+3. Restore Gradle cache (dependencies and wrapper)
+4. Restore build cache (compiled outputs)
+5. Grant execute permission for gradlew
+6. Build with Gradle (using `--build-cache` flag)
+7. Run Lint
+8. Upload APK and Lint reports as artifacts
+9. Save Gradle cache (even on build failure)
+10. Save build cache (even on build failure)
 
-**Artifacts**:
+**Caching Strategy**:
+- **Gradle Cache**: Caches `~/.gradle/caches`, `~/.gradle/wrapper`, and `.gradle`
+  - Key: `${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}`
+- **Build Cache**: Caches `**/build` directories
+  - Key: `${{ runner.os }}-build-${{ github.sha }}`
+- Both caches use `if: always()` to save even on build failures
+- Feature branches can restore from main/master branch caches
+
+**Artifacts** (7-day retention):
 - Debug APK: `app-debug.apk`
 - Lint Report: `lint-results-debug.html`
+
+#### 2. Claude Code Workflow (`.github/workflows/claude.yml`)
+
+Invokes Claude when mentioned in issues or pull requests.
+
+**Triggers**:
+- Issue comments containing `@claude`
+- Pull request review comments containing `@claude`
+- Pull request reviews containing `@claude`
+- Issues with `@claude` in title or body
+
+**Setup Required**:
+- Add `CLAUDE_CODE_OAUTH_TOKEN` secret to repository
+- Grant permissions: `contents: read`, `pull-requests: read`, `issues: read`, `id-token: write`, `actions: read`
+
+**Usage**:
+Comment `@claude <your request>` on any issue or PR to invoke Claude for assistance.
+
+#### 3. Claude Code Review Workflow (`.github/workflows/claude-code-review.yml`)
+
+Automatically performs code review on pull requests.
+
+**Triggers**:
+- Pull request opened
+- Pull request synchronized (new commits pushed)
+- Pull request marked ready for review
+- Pull request reopened
+
+**Setup Required**:
+- Add `CLAUDE_CODE_OAUTH_TOKEN` secret to repository
+- Grant permissions: `contents: read`, `pull-requests: read`, `issues: read`, `id-token: write`
+
+**Features**:
+- Automated code review using Claude
+- Can be configured to only run on specific file patterns (see commented paths in workflow)
+- Can be filtered by PR author or contributor type (see commented conditions in workflow)
 
 ## Development Notes
 

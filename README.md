@@ -81,7 +81,13 @@ See [CLAUDE.md](CLAUDE.md) for detailed development documentation, architecture,
 
 ## CI/CD
 
-The project includes GitHub Actions workflow that automatically builds the app on pull requests.
+The project includes three GitHub Actions workflows:
+
+1. **PR Build** - Automatically builds and tests on pull requests with advanced caching
+2. **Claude Code** - Invoke Claude AI assistance by mentioning `@claude` in issues/PRs
+3. **Claude Code Review** - Automatic AI code review on pull requests
+
+See [CLAUDE.md](CLAUDE.md#github-actions-build) for detailed workflow configuration.
 
 ## Tech Stack
 

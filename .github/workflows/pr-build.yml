@@ -1,5 +1,9 @@
 name: Android PR Build
 
+# Cache scoping note: GitHub Actions caches are branch-scoped. Feature branches can only
+# access caches from the same branch or the default branch (main/master). Using separate
+# restore/save steps ensures caches are saved even if the build fails.
+
 on:
   pull_request:
     branches: [ main, master ]
@@ -19,13 +23,34 @@ jobs:
       with:
         distribution: 'temurin'
         java-version: '17'
-        cache: 'gradle'
+
+    - name: Restore Gradle cache
+      id: gradle-cache-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+          .gradle
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    - name: Restore build cache
+      id: build-cache-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          **/build
+        key: ${{ runner.os }}-build-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-build-
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
     - name: Build with Gradle
-      run: ./gradlew build --stacktrace
+      run: ./gradlew build --stacktrace --build-cache
 
     - name: Run Lint
       run: ./gradlew lint
@@ -35,6 +60,7 @@ jobs:
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 7
 
     - name: Upload Lint Report
       if: always()
@@ -42,3 +68,22 @@ jobs:
       with:
         name: lint-report
         path: app/build/reports/lint-results-debug.html
+        retention-days: 7
+
+    - name: Save Gradle cache
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+          .gradle
+        key: ${{ steps.gradle-cache-restore.outputs.cache-primary-key }}
+
+    - name: Save build cache
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          **/build
+        key: ${{ steps.build-cache-restore.outputs.cache-primary-key }}
