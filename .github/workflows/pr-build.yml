@@ -54,7 +54,7 @@ jobs:
     - name: Create local.properties for keystore generation
       run: |
         cat > local.properties << 'EOF'
-        storeFile=${{ github.workspace }}/app/debug.keystore
+        storeFile=app/debug.keystore
         keyAlias=androiddebugkey
         keyPassword=android
         storePassword=android

@@ -52,6 +52,11 @@ def certificate = new JcaX509CertificateConverter()
 def ks = KeyStore.getInstance("JKS")
 ks.load(null, null)
 ks.setKeyEntry(alias, keyPair.private, keyPassword.toCharArray(), [certificate] as X509Certificate[])
-file(localProps['storeFile']).withOutputStream { os ->
+
+// Ensure parent directory exists before writing keystore
+def keystoreFile = file(localProps['storeFile'])
+keystoreFile.parentFile.mkdirs()
+
+keystoreFile.withOutputStream { os ->
  ks.store(os, storePassword.toCharArray())
 }
