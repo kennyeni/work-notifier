@@ -44,7 +44,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<MaterialButton>(R.id.btnSelectApps).setOnClickListener {
-            Toast.makeText(this, R.string.select_apps_placeholder, Toast.LENGTH_SHORT).show()
+            // Launch the InterceptedAppsActivity
+            val intent = Intent(this, InterceptedAppsActivity::class.java)
+            startActivity(intent)
         }
     }
 
