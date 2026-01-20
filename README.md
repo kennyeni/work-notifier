@@ -83,7 +83,7 @@ See [CLAUDE.md](CLAUDE.md) for detailed development documentation, architecture,
 
 The project includes three GitHub Actions workflows:
 
-1. **PR Build** - Automatically builds and tests on pull requests with advanced caching
+1. **Build** - Automatically builds and tests on pull requests AND pushes to main/master with advanced caching
 2. **Claude Code** - Invoke Claude AI assistance by mentioning `@claude` in issues/PRs
 3. **Claude Code Review** - Automatic AI code review on pull requests
 

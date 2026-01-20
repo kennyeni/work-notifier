@@ -229,9 +229,11 @@ These scripts will:
 
 The project includes three GitHub Actions workflows for automated CI/CD:
 
-#### 1. PR Build Workflow (`.github/workflows/pr-build.yml`)
+#### 1. Build Workflow (`.github/workflows/pr-build.yml`)
 
-Automatically builds on pull requests to `main` or `master` branches.
+Automatically builds on:
+- Pull requests to `main` or `master` branches
+- Direct pushes/merges to `main` or `master` branches
 
 **Build Steps**:
 1. Checkout code
