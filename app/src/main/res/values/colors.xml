@@ -15,4 +15,5 @@
     <color name="card_background">#1E1E1E</color>
     <color name="divider">#404040</color>
     <color name="work_profile_badge">#FF9800</color>
+    <color name="private_profile_badge">#9C27B0</color>
 </resources>

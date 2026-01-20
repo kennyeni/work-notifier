@@ -24,6 +24,7 @@
     <string name="no_title">(No title)</string>
     <string name="no_content">(No content)</string>
     <string name="work_profile_badge">WORK</string>
+    <string name="private_profile_badge">PRIVATE</string>
     <string name="show_more">Show more</string>
     <string name="show_less">Show less</string>
 </resources>
