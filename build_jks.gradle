@@ -54,9 +54,12 @@ ks.load(null, null)
 ks.setKeyEntry(alias, keyPair.private, keyPassword.toCharArray(), [certificate] as X509Certificate[])
 
 // Ensure parent directory exists before writing keystore
-def keystoreFile = file(localProps['storeFile'])
+// Use rootProject.file() to resolve path from root project directory
+def keystoreFile = rootProject.file(localProps['storeFile'])
+println "Creating keystore at: ${keystoreFile.absolutePath}"
 keystoreFile.parentFile.mkdirs()
 
 keystoreFile.withOutputStream { os ->
  ks.store(os, storePassword.toCharArray())
 }
+println "Keystore created successfully at: ${keystoreFile.absolutePath}"

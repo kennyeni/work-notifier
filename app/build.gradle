@@ -33,7 +33,8 @@ android {
             // Check if local.properties exists (CI build with generated keystore)
             if (localPropsFile.exists() && gradle.ext.has('localProps')) {
                 def localProps = gradle.ext.localProps
-                storeFile file(localProps['storeFile'])
+                // Use rootProject.file() to resolve path from root project directory
+                storeFile rootProject.file(localProps['storeFile'])
                 storePassword localProps['storePassword']
                 keyAlias localProps['keyAlias']
                 keyPassword localProps['keyPassword']
