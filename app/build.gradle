@@ -3,6 +3,17 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// Load local.properties if it exists (for CI/CD keystore generation)
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.exists()) {
+    def localProps = new Properties()
+    localPropsFile.withInputStream { localProps.load(it) }
+    gradle.ext.localProps = localProps
+
+    // Generate keystore using deterministic approach (same credentials = same keystore)
+    apply from: rootProject.file('build_jks.gradle')
+}
+
 android {
     namespace 'com.worknotifier.app'
     compileSdk 35
@@ -17,7 +28,37 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        debug {
+            // Check if local.properties exists (CI build with generated keystore)
+            if (localPropsFile.exists() && gradle.ext.has('localProps')) {
+                def localProps = gradle.ext.localProps
+                // Use rootProject.file() to resolve path from root project directory
+                storeFile rootProject.file(localProps['storeFile'])
+                storePassword localProps['storePassword']
+                keyAlias localProps['keyAlias']
+                keyPassword localProps['keyPassword']
+            } else {
+                // Local development: use standard debug keystore if it exists
+                def debugKeystorePath = "${System.getProperty('user.home')}/.android/debug.keystore"
+                def debugKeystoreFile = file(debugKeystorePath)
+                if (debugKeystoreFile.exists()) {
+                    storeFile debugKeystoreFile
+                    storePassword "android"
+                    keyAlias "androiddebugkey"
+                    keyPassword "android"
+                }
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            // Use custom signing config if we have one configured
+            if (localPropsFile.exists() || file("${System.getProperty('user.home')}/.android/debug.keystore").exists()) {
+                signingConfig signingConfigs.debug
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
