@@ -155,6 +155,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
         class AppViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
             private val ivAppIcon: ImageView = itemView.findViewById(R.id.ivAppIcon)
             private val tvAppName: TextView = itemView.findViewById(R.id.tvAppName)
+            private val tvWorkProfileBadge: TextView = itemView.findViewById(R.id.tvWorkProfileBadge)
             private val tvPackageName: TextView = itemView.findViewById(R.id.tvPackageName)
             private val tvNotificationCount: TextView = itemView.findViewById(R.id.tvNotificationCount)
             private val llNotifications: LinearLayout = itemView.findViewById(R.id.llNotifications)
@@ -176,6 +177,10 @@ class InterceptedAppsActivity : AppCompatActivity() {
                 val appName = notifications.firstOrNull()?.appName ?: packageName
                 tvAppName.text = appName
 
+                // Show work profile badge if any notification is from work profile
+                val hasWorkProfile = notifications.any { it.isWorkProfile }
+                tvWorkProfileBadge.visibility = if (hasWorkProfile) View.VISIBLE else View.GONE
+
                 // Set package name
                 tvPackageName.text = packageName
 
@@ -193,16 +198,43 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     val tvTitle: TextView = notificationView.findViewById(R.id.tvNotificationTitle)
                     val tvText: TextView = notificationView.findViewById(R.id.tvNotificationText)
                     val tvTime: TextView = notificationView.findViewById(R.id.tvNotificationTime)
+                    val tvExpandCollapse: TextView = notificationView.findViewById(R.id.tvExpandCollapse)
 
                     tvTitle.text = notification.title ?: context.getString(R.string.no_title)
-                    tvText.text = notification.text ?: context.getString(R.string.no_content)
+                    val notificationText = notification.text ?: context.getString(R.string.no_content)
                     tvTime.text = InterceptedNotification.formatTimestamp(notification.timestamp)
 
                     // Handle empty text
                     if (notification.text.isNullOrBlank()) {
                         tvText.visibility = View.GONE
+                        tvExpandCollapse.visibility = View.GONE
                     } else {
                         tvText.visibility = View.VISIBLE
+                        tvText.text = notificationText
+
+                        // Set up expand/collapse
+                        var isExpanded = false
+                        tvText.maxLines = 2
+                        tvText.post {
+                            val lineCount = tvText.lineCount
+                            if (lineCount > 2) {
+                                tvExpandCollapse.visibility = View.VISIBLE
+                                tvExpandCollapse.text = context.getString(R.string.show_more)
+
+                                tvExpandCollapse.setOnClickListener {
+                                    isExpanded = !isExpanded
+                                    if (isExpanded) {
+                                        tvText.maxLines = Int.MAX_VALUE
+                                        tvExpandCollapse.text = context.getString(R.string.show_less)
+                                    } else {
+                                        tvText.maxLines = 2
+                                        tvExpandCollapse.text = context.getString(R.string.show_more)
+                                    }
+                                }
+                            } else {
+                                tvExpandCollapse.visibility = View.GONE
+                            }
+                        }
                     }
 
                     llNotifications.addView(notificationView)

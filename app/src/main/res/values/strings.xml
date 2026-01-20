@@ -23,4 +23,7 @@
     <string name="app_icon_description">App icon</string>
     <string name="no_title">(No title)</string>
     <string name="no_content">(No content)</string>
+    <string name="work_profile_badge">WORK</string>
+    <string name="show_more">Show more</string>
+    <string name="show_less">Show less</string>
 </resources>

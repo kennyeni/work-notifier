@@ -9,7 +9,8 @@ data class InterceptedNotification(
     val title: String?,
     val text: String?,
     val timestamp: Long,
-    val key: String
+    val key: String,
+    val isWorkProfile: Boolean = false
 ) {
     companion object {
         /**

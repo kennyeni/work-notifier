@@ -14,11 +14,15 @@ object NotificationStorage {
     /**
      * Adds a notification to storage.
      * Keeps only the most recent MAX_NOTIFICATIONS_PER_APP notifications per app.
+     * Deduplicates notifications based on their key to avoid showing duplicates.
      */
     fun addNotification(notification: InterceptedNotification) {
         val appNotifications = notifications.getOrPut(notification.packageName) {
             mutableListOf()
         }
+
+        // Remove any existing notification with the same key (update case)
+        appNotifications.removeAll { it.key == notification.key }
 
         // Add the new notification at the beginning
         appNotifications.add(0, notification)

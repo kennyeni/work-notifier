@@ -9,7 +9,8 @@
     android:layout_marginTop="8dp"
     android:layout_marginBottom="8dp"
     app:cardElevation="2dp"
-    app:cardCornerRadius="8dp">
+    app:cardCornerRadius="8dp"
+    app:cardBackgroundColor="@color/card_background">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -39,21 +40,46 @@
                 android:orientation="vertical"
                 android:layout_marginStart="12dp">
 
-                <TextView
-                    android:id="@+id/tvAppName"
+                <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="@android:color/black"
-                    tools:text="WhatsApp" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/tvAppName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/text_primary"
+                        tools:text="WhatsApp" />
+
+                    <TextView
+                        android:id="@+id/tvWorkProfileBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:text="@string/work_profile_badge"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/work_profile_badge"
+                        android:background="@drawable/work_profile_badge_bg"
+                        android:paddingStart="6dp"
+                        android:paddingEnd="6dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"
+                        android:visibility="gone"
+                        tools:visibility="visible" />
+
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/tvPackageName"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textSize="12sp"
-                    android:textColor="@android:color/darker_gray"
+                    android:textColor="@color/text_tertiary"
                     tools:text="com.whatsapp" />
 
             </LinearLayout>
@@ -64,7 +90,7 @@
                 android:layout_height="wrap_content"
                 android:textSize="14sp"
                 android:textStyle="bold"
-                android:textColor="@android:color/holo_blue_dark"
+                android:textColor="@color/teal_200"
                 tools:text="3" />
 
         </LinearLayout>
@@ -73,8 +99,7 @@
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:background="@android:color/darker_gray"
-            android:alpha="0.2"
+            android:background="@color/divider"
             android:layout_marginTop="8dp"
             android:layout_marginBottom="8dp" />
 
