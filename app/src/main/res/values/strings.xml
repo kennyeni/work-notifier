@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Work Notifier</string>
+    <string name="send_test_notification">Send Test Notification</string>
+    <string name="select_apps">Select Apps</string>
+    <string name="notification_channel_name">Messages</string>
+    <string name="notification_channel_description">Notifications for messages</string>
+    <string name="test_notification_title">Test Message</string>
+    <string name="test_notification_content">This is a test notification for Android Auto</string>
+    <string name="test_notification_sender">Work Notifier</string>
+    <string name="reply_action">Reply</string>
+    <string name="mark_as_read_action">Mark as Read</string>
+    <string name="notification_posted">Test notification sent!</string>
+    <string name="select_apps_placeholder">Feature coming soon</string>
+</resources>
