@@ -51,6 +51,15 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
+    - name: Create local.properties for keystore generation
+      run: |
+        cat > local.properties << 'EOF'
+        storeFile=${{ github.workspace }}/app/debug.keystore
+        keyAlias=androiddebugkey
+        keyPassword=android
+        storePassword=android
+        EOF
+
     - name: Build with Gradle
       run: ./gradlew build --stacktrace --build-cache
 
