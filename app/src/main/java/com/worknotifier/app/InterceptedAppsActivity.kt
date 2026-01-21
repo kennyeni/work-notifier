@@ -4,9 +4,13 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Base64
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -48,7 +52,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
         btnEnablePermission = findViewById(R.id.btnEnablePermission)
 
         // Set up RecyclerView
-        adapter = AppsAdapter(this)
+        adapter = AppsAdapter(this, this)
         rvApps.layoutManager = LinearLayoutManager(this)
         rvApps.adapter = adapter
 
@@ -130,7 +134,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
     /**
      * RecyclerView adapter for displaying apps with their notifications.
      */
-    private class AppsAdapter(private val context: Context) :
+    private class AppsAdapter(private val context: Context, private val activity: InterceptedAppsActivity) :
         RecyclerView.Adapter<AppsAdapter.AppViewHolder>() {
 
         private var data: List<Pair<String, List<InterceptedNotification>>> = emptyList()
@@ -147,8 +151,8 @@ class InterceptedAppsActivity : AppCompatActivity() {
         }
 
         override fun onBindViewHolder(holder: AppViewHolder, position: Int) {
-            val (packageName, notifications) = data[position]
-            holder.bind(context, packageName, notifications)
+            val (storageKey, notifications) = data[position]
+            holder.bind(context, activity, storageKey, notifications)
         }
 
         override fun getItemCount(): Int = data.size
@@ -160,14 +164,45 @@ class InterceptedAppsActivity : AppCompatActivity() {
             private val tvPackageName: TextView = itemView.findViewById(R.id.tvPackageName)
             private val tvNotificationCount: TextView = itemView.findViewById(R.id.tvNotificationCount)
             private val llNotifications: LinearLayout = itemView.findViewById(R.id.llNotifications)
+            private val btnToggleNotifications: Button = itemView.findViewById(R.id.btnToggleNotifications)
+            private val btnDismissApp: Button = itemView.findViewById(R.id.btnDismissApp)
+
+            private var isExpanded = true
 
             fun bind(
                 context: Context,
-                packageName: String,
+                activity: InterceptedAppsActivity,
+                storageKey: String,
                 notifications: List<InterceptedNotification>
             ) {
-                // Set app icon
-                val appIcon = getAppIcon(context, packageName)
+                // Parse storage key: "packageName|profileType"
+                val parts = storageKey.split("|")
+                val packageName = parts[0]
+                val profileType = if (parts.size > 1) {
+                    try {
+                        ProfileType.valueOf(parts[1])
+                    } catch (e: Exception) {
+                        ProfileType.PERSONAL
+                    }
+                } else {
+                    ProfileType.PERSONAL
+                }
+
+                // Set app icon - try stored icon first, then PackageManager, then default
+                val storedIconBase64 = NotificationStorage.getAppIconByKey(storageKey)
+                var appIcon: Drawable? = null
+
+                // Try stored icon first (works for all profiles)
+                if (!storedIconBase64.isNullOrBlank()) {
+                    appIcon = decodeBase64ToDrawable(context, storedIconBase64)
+                }
+
+                // Fallback to PackageManager (works for personal profile)
+                if (appIcon == null) {
+                    appIcon = getAppIconFromPackageManager(context, packageName)
+                }
+
+                // Set icon or use default
                 if (appIcon != null) {
                     ivAppIcon.setImageDrawable(appIcon)
                 } else {
@@ -178,11 +213,9 @@ class InterceptedAppsActivity : AppCompatActivity() {
                 val appName = notifications.firstOrNull()?.appName ?: packageName
                 tvAppName.text = appName
 
-                // Show appropriate profile badge
-                val profileTypes = notifications.map { it.profileType }.distinct()
-                when {
-                    profileTypes.contains(ProfileType.PRIVATE) -> {
-                        // Show PRIVATE badge (takes priority if both exist)
+                // Show profile badge based on the profile type
+                when (profileType) {
+                    ProfileType.PRIVATE -> {
                         tvWorkProfileBadge.visibility = View.VISIBLE
                         tvWorkProfileBadge.text = context.getString(R.string.private_profile_badge)
                         tvWorkProfileBadge.setTextColor(
@@ -190,8 +223,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
                         )
                         tvWorkProfileBadge.setBackgroundResource(R.drawable.private_profile_badge_bg)
                     }
-                    profileTypes.contains(ProfileType.WORK) -> {
-                        // Show WORK badge
+                    ProfileType.WORK -> {
                         tvWorkProfileBadge.visibility = View.VISIBLE
                         tvWorkProfileBadge.text = context.getString(R.string.work_profile_badge)
                         tvWorkProfileBadge.setTextColor(
@@ -199,20 +231,41 @@ class InterceptedAppsActivity : AppCompatActivity() {
                         )
                         tvWorkProfileBadge.setBackgroundResource(R.drawable.work_profile_badge_bg)
                     }
-                    else -> {
-                        // No special profile, hide badge
+                    ProfileType.PERSONAL -> {
                         tvWorkProfileBadge.visibility = View.GONE
                     }
                 }
 
-                // Set package name
+                // Set package name with profile indicator
                 tvPackageName.text = packageName
 
                 // Set notification count
                 tvNotificationCount.text = notifications.size.toString()
 
+                // Set up collapse/expand button
+                btnToggleNotifications.text = if (isExpanded)
+                    context.getString(R.string.collapse_notifications)
+                else
+                    context.getString(R.string.expand_notifications)
+
+                btnToggleNotifications.setOnClickListener {
+                    isExpanded = !isExpanded
+                    llNotifications.visibility = if (isExpanded) View.VISIBLE else View.GONE
+                    btnToggleNotifications.text = if (isExpanded)
+                        context.getString(R.string.collapse_notifications)
+                    else
+                        context.getString(R.string.expand_notifications)
+                }
+
+                // Set up dismiss app button
+                btnDismissApp.setOnClickListener {
+                    NotificationStorage.removeApp(packageName, profileType)
+                    activity.loadInterceptedApps()
+                }
+
                 // Clear previous notifications
                 llNotifications.removeAllViews()
+                llNotifications.visibility = if (isExpanded) View.VISIBLE else View.GONE
 
                 // Add notification items
                 notifications.forEach { notification ->
@@ -223,10 +276,17 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     val tvText: TextView = notificationView.findViewById(R.id.tvNotificationText)
                     val tvTime: TextView = notificationView.findViewById(R.id.tvNotificationTime)
                     val tvExpandCollapse: TextView = notificationView.findViewById(R.id.tvExpandCollapse)
+                    val btnDismissNotification: Button = notificationView.findViewById(R.id.btnDismissNotification)
 
                     tvTitle.text = notification.title ?: context.getString(R.string.no_title)
                     val notificationText = notification.text ?: context.getString(R.string.no_content)
                     tvTime.text = InterceptedNotification.formatTimestamp(notification.timestamp)
+
+                    // Set up dismiss notification button
+                    btnDismissNotification.setOnClickListener {
+                        NotificationStorage.removeNotification(packageName, profileType, notification.key)
+                        activity.loadInterceptedApps()
+                    }
 
                     // Handle empty text
                     if (notification.text.isNullOrBlank()) {
@@ -237,7 +297,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
                         tvText.text = notificationText
 
                         // Set up expand/collapse
-                        var isExpanded = false
+                        var isTextExpanded = false
                         tvText.maxLines = 2
                         tvText.post {
                             val lineCount = tvText.lineCount
@@ -246,8 +306,8 @@ class InterceptedAppsActivity : AppCompatActivity() {
                                 tvExpandCollapse.text = context.getString(R.string.show_more)
 
                                 tvExpandCollapse.setOnClickListener {
-                                    isExpanded = !isExpanded
-                                    if (isExpanded) {
+                                    isTextExpanded = !isTextExpanded
+                                    if (isTextExpanded) {
                                         tvText.maxLines = Int.MAX_VALUE
                                         tvExpandCollapse.text = context.getString(R.string.show_less)
                                     } else {
@@ -265,7 +325,32 @@ class InterceptedAppsActivity : AppCompatActivity() {
                 }
             }
 
-            private fun getAppIcon(context: Context, packageName: String): Drawable? {
+            /**
+             * Decodes a Base64 encoded string back to a Drawable.
+             */
+            private fun decodeBase64ToDrawable(context: Context, base64: String): Drawable? {
+                return try {
+                    // Try NO_WRAP first (new format), then DEFAULT (old format) for compatibility
+                    val decodedBytes = try {
+                        Base64.decode(base64, Base64.NO_WRAP)
+                    } catch (e: Exception) {
+                        Base64.decode(base64, Base64.DEFAULT)
+                    }
+                    val bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+                    if (bitmap != null) {
+                        BitmapDrawable(context.resources, bitmap)
+                    } else {
+                        null
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+            }
+
+            /**
+             * Gets app icon from PackageManager (fallback for personal profile apps).
+             */
+            private fun getAppIconFromPackageManager(context: Context, packageName: String): Drawable? {
                 return try {
                     context.packageManager.getApplicationIcon(packageName)
                 } catch (e: PackageManager.NameNotFoundException) {

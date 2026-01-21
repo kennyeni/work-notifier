@@ -27,4 +27,8 @@
     <string name="private_profile_badge">PRIVATE</string>
     <string name="show_more">Show more</string>
     <string name="show_less">Show less</string>
+    <string name="collapse_notifications">Collapse</string>
+    <string name="expand_notifications">Expand</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="dismiss_app">Dismiss App</string>
 </resources>

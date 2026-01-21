@@ -15,13 +15,18 @@ The app uses `NotificationListenerService` to intercept notifications from:
 
 **Note**: Private Space notifications are successfully intercepted by NotificationListenerService on Android 15 when Private Space is unlocked - no root or Xposed modifications needed!
 
+**Multi-Profile Support**: When the same app is installed across multiple profiles (e.g., WhatsApp in Personal, Work, and Private), each instance is now tracked separately with its own notification history and profile badge.
+
 ### UI Features
 - Dark theme optimized interface
-- App icons and names
-- Profile badges (orange "WORK", purple "PRIVATE")
-- Last 3 notifications per app
+- App icons and names (cross-profile icon support - Work/Private app icons displayed correctly)
+- Profile badges (orange "WORK", purple "PRIVATE") - now shows per profile instance
+- Last 10 notifications per app per profile (unique, deduplicated)
 - Expand/collapse for long notification text
-- Deduplication by notification key
+- Collapse/expand notifications per app to reduce clutter
+- Dismiss individual notifications or entire apps from history
+- Deduplication by notification key with improved validation
+- Persistent notification history (survives app restart)
 
 ### Android Auto Test Notifications
 - Send MessagingStyle test notifications
@@ -41,8 +46,8 @@ work-notifier/
 │   │   ├── NotificationInterceptorService.kt  # Core interception logic
 │   │   ├── InterceptedAppsActivity.kt        # Display intercepted apps
 │   │   ├── data/
-│   │   │   ├── InterceptedNotification.kt    # Data model with ProfileType enum
-│   │   │   └── NotificationStorage.kt        # In-memory storage
+│   │   │   ├── InterceptedNotification.kt    # Data model with ProfileType enum and icon storage
+│   │   │   └── NotificationStorage.kt        # Persistent and in-memory storage
 │   │   └── utils/
 │   │       └── RootUtils.kt                  # Optional root features
 │   └── build.gradle
@@ -63,6 +68,7 @@ work-notifier/
 - Material Components 1.11.0
 - ConstraintLayout 2.1.4
 - RecyclerView 1.3.2
+- Gson 2.10.1 (for persistent storage)
 
 ## Key Implementation Files
 
@@ -72,20 +78,30 @@ Core service that intercepts notifications using `NotificationListenerService`.
 **Key Methods:**
 - `onNotificationPosted()`: Called when a notification is posted
 - `determineProfileType()`: Detects if notification is from PERSONAL/WORK/PRIVATE profile
+- `getAppIconBase64()`: Captures app icon and encodes as Base64 for cross-profile support
 - Uses `UserHandle` comparison and optional root access for accurate profile detection
+
+**Cross-Profile Icon Support:**
+- Captures app icons when notifications are intercepted (works for all profiles)
+- Encodes icons as Base64 and stores with notification data
+- Solves the issue where personal profile PackageManager can't access Work/Private app icons
 
 ### InterceptedAppsActivity.kt
 Displays intercepted apps and their notifications with:
 - RecyclerView-based list
-- Profile badges (WORK/PRIVATE)
-- Expand/collapse functionality
+- Profile badges (WORK/PRIVATE) shown per app instance
+- Collapse/expand buttons for each app's notification list
+- Dismiss buttons for individual notifications and entire apps
 - Permission request UI
 
 ### NotificationStorage.kt
-In-memory storage with:
-- Deduplication by notification key
-- Maximum 3 notifications per app
-- Thread-safe operations
+Persistent and in-memory storage with:
+- **Composite key**: Stores apps by "packageName|profileType" to differentiate same app across profiles
+- **Deduplication**: Enhanced validation - removes duplicates by notification key and rejects invalid entries
+- **Persistence**: Saves to SharedPreferences using Gson serialization, survives app restarts
+- **Maximum**: 10 unique notifications per app per profile
+- **Thread-safe**: ConcurrentHashMap for concurrent access
+- **Dismiss functionality**: Remove individual notifications or entire app instances
 
 ### RootUtils.kt (Optional)
 If root access is available (Magisk), the app can:
@@ -132,8 +148,10 @@ The build uses deterministic keystore generation (`build_jks.gradle`) to ensure 
 
 ## Development Notes
 
-- All notification data is stored in-memory only
-- No persistent storage or databases used
+- Notification data is stored in-memory with persistent backup to SharedPreferences
+- Data persists across app restarts and device reboots
+- Each app+profile combination is tracked separately (e.g., WhatsApp Personal vs WhatsApp Work)
+- Enhanced duplicate detection validates notification keys and timestamps
 - Respects Android's profile isolation boundaries
 - Read-only access to notification data
 

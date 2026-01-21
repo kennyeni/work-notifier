@@ -3,16 +3,22 @@ package com.worknotifier.app
 import android.app.Notification
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.os.Process
 import android.os.UserHandle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Base64
 import android.util.Log
 import com.worknotifier.app.data.InterceptedNotification
 import com.worknotifier.app.data.NotificationStorage
 import com.worknotifier.app.data.ProfileType
 import com.worknotifier.app.utils.RootUtils
+import java.io.ByteArrayOutputStream
 
 /**
  * NotificationListenerService to intercept notifications from all apps.
@@ -66,8 +72,9 @@ class NotificationInterceptorService : NotificationListenerService() {
             val timestamp = sbn.postTime
             val key = sbn.key
 
-            // Get app name
+            // Get app name and icon
             val appName = getAppName(packageName)
+            val appIconBase64 = getAppIconBase64(packageName)
 
             // Determine profile type and user ID
             val (profileType, userId) = determineProfileType(sbn)
@@ -81,7 +88,8 @@ class NotificationInterceptorService : NotificationListenerService() {
                 timestamp = timestamp,
                 key = key,
                 profileType = profileType,
-                userId = userId
+                userId = userId,
+                appIconBase64 = appIconBase64
             )
 
             // Store the notification
@@ -115,6 +123,63 @@ class NotificationInterceptorService : NotificationListenerService() {
         } catch (e: PackageManager.NameNotFoundException) {
             packageName // Fallback to package name if app name not found
         }
+    }
+
+    /**
+     * Gets the app icon and encodes it as Base64 string for storage.
+     * This allows icons from Work and Private profiles to be displayed correctly.
+     */
+    private fun getAppIconBase64(packageName: String): String? {
+        return try {
+            val packageManager = applicationContext.packageManager
+            val appIcon = packageManager.getApplicationIcon(packageName)
+            val bitmap = drawableToBitmap(appIcon)
+            // Scale down to reduce storage size (96x96 is sufficient for display)
+            val scaledBitmap = scaleBitmap(bitmap, 96, 96)
+            bitmapToBase64(scaledBitmap)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not get app icon for $packageName", e)
+            null
+        }
+    }
+
+    /**
+     * Converts a Drawable to a Bitmap.
+     */
+    private fun drawableToBitmap(drawable: Drawable): Bitmap {
+        if (drawable is BitmapDrawable && drawable.bitmap != null) {
+            return drawable.bitmap
+        }
+
+        val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 96
+        val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 96
+
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        return bitmap
+    }
+
+    /**
+     * Scales a bitmap to the specified dimensions.
+     */
+    private fun scaleBitmap(bitmap: Bitmap, maxWidth: Int, maxHeight: Int): Bitmap {
+        if (bitmap.width <= maxWidth && bitmap.height <= maxHeight) {
+            return bitmap
+        }
+        return Bitmap.createScaledBitmap(bitmap, maxWidth, maxHeight, true)
+    }
+
+    /**
+     * Converts a Bitmap to a Base64 encoded string.
+     */
+    private fun bitmapToBase64(bitmap: Bitmap): String {
+        val byteArrayOutputStream = ByteArrayOutputStream()
+        // Use JPEG with 85% quality for better compression (icons don't need PNG transparency usually)
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, byteArrayOutputStream)
+        val byteArray = byteArrayOutputStream.toByteArray()
+        return Base64.encodeToString(byteArray, Base64.NO_WRAP)
     }
 
     /**

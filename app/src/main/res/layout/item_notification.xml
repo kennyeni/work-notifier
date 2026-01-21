@@ -44,17 +44,37 @@
         android:layout_marginTop="4dp"
         tools:text="This is the notification content that can span multiple lines if needed" />
 
-    <TextView
-        android:id="@+id/tvExpandCollapse"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/show_more"
-        android:textSize="12sp"
-        android:textColor="@color/teal_200"
-        android:layout_marginTop="4dp"
-        android:visibility="gone"
-        android:clickable="true"
-        android:focusable="true"
-        tools:visibility="visible" />
+        android:orientation="horizontal"
+        android:layout_marginTop="4dp">
+
+        <TextView
+            android:id="@+id/tvExpandCollapse"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/show_more"
+            android:textSize="12sp"
+            android:textColor="@color/teal_200"
+            android:visibility="gone"
+            android:clickable="true"
+            android:focusable="true"
+            tools:visibility="visible" />
+
+        <Button
+            android:id="@+id/btnDismissNotification"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/dismiss"
+            android:textSize="11sp"
+            android:minHeight="0dp"
+            android:paddingTop="0dp"
+            android:paddingBottom="0dp"
+            android:textColor="@color/text_tertiary" />
+
+    </LinearLayout>
 
 </LinearLayout>
