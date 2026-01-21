@@ -31,4 +31,5 @@
     <string name="expand_notifications">Expand</string>
     <string name="dismiss">Dismiss</string>
     <string name="dismiss_app">Dismiss App</string>
+    <string name="mimic_notifications_description">Enable notification mimicking for this app</string>
 </resources>

@@ -16,11 +16,14 @@ object NotificationStorage {
     private const val PREFS_NAME = "notification_storage"
     private const val KEY_NOTIFICATIONS = "notifications"
     private const val KEY_APP_ICONS = "app_icons"
+    private const val KEY_MIMIC_ENABLED = "mimic_enabled"
 
     // Map key: "packageName|profileType"
     private val notifications = ConcurrentHashMap<String, MutableList<InterceptedNotification>>()
     // Separate storage for app icons to avoid duplication
     private val appIcons = ConcurrentHashMap<String, String>()
+    // Track which app+profile combinations should be mimicked
+    private val mimicEnabled = ConcurrentHashMap<String, Boolean>()
     private val gson = Gson()
     private var sharedPrefs: SharedPreferences? = null
 
@@ -150,7 +153,29 @@ object NotificationStorage {
     fun clear() {
         notifications.clear()
         appIcons.clear()
+        mimicEnabled.clear()
         saveToPrefs()
+    }
+
+    /**
+     * Sets whether notifications from this app+profile should be mimicked.
+     */
+    fun setMimicEnabled(packageName: String, profileType: ProfileType, enabled: Boolean) {
+        val storageKey = getStorageKey(packageName, profileType)
+        if (enabled) {
+            mimicEnabled[storageKey] = true
+        } else {
+            mimicEnabled.remove(storageKey)
+        }
+        saveToPrefs()
+    }
+
+    /**
+     * Checks if notifications from this app+profile should be mimicked.
+     */
+    fun isMimicEnabled(packageName: String, profileType: ProfileType): Boolean {
+        val storageKey = getStorageKey(packageName, profileType)
+        return mimicEnabled[storageKey] == true
     }
 
     /**
@@ -185,6 +210,11 @@ object NotificationStorage {
                 val iconsJson = gson.toJson(iconsToSave)
                 editor.putString(KEY_APP_ICONS, iconsJson)
 
+                // Save mimic enabled states
+                val mimicToSave = mimicEnabled.toMap()
+                val mimicJson = gson.toJson(mimicToSave)
+                editor.putString(KEY_MIMIC_ENABLED, mimicJson)
+
                 editor.apply()
             } catch (e: Exception) {
                 // Log error but don't crash
@@ -217,10 +247,20 @@ object NotificationStorage {
                     appIcons.clear()
                     appIcons.putAll(loadedIcons)
                 }
+
+                // Load mimic enabled states
+                val mimicJson = prefs.getString(KEY_MIMIC_ENABLED, null)
+                if (mimicJson != null) {
+                    val type = object : TypeToken<Map<String, Boolean>>() {}.type
+                    val loadedMimic: Map<String, Boolean> = gson.fromJson(mimicJson, type)
+                    mimicEnabled.clear()
+                    mimicEnabled.putAll(loadedMimic)
+                }
             } catch (e: Exception) {
                 // If loading fails, start fresh
                 notifications.clear()
                 appIcons.clear()
+                mimicEnabled.clear()
             }
         }
     }
