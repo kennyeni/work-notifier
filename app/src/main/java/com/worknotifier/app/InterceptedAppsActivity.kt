@@ -80,8 +80,8 @@ class InterceptedAppsActivity : AppCompatActivity() {
      * Checks if the notification listener permission is granted.
      */
     private fun checkPermissionStatus() {
-        val isEnabled = isNotificationListenerEnabled()
-        btnEnablePermission.visibility = if (isEnabled) View.GONE else View.VISIBLE
+        val isNotificationListenerEnabled = isNotificationListenerEnabled()
+        btnEnablePermission.visibility = if (isNotificationListenerEnabled) View.GONE else View.VISIBLE
     }
 
     /**
