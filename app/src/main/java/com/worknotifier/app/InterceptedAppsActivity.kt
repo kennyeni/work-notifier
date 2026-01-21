@@ -15,6 +15,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -163,6 +164,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
             private val tvWorkProfileBadge: TextView = itemView.findViewById(R.id.tvWorkProfileBadge)
             private val tvPackageName: TextView = itemView.findViewById(R.id.tvPackageName)
             private val tvNotificationCount: TextView = itemView.findViewById(R.id.tvNotificationCount)
+            private val cbMimicNotifications: CheckBox = itemView.findViewById(R.id.cbMimicNotifications)
             private val llNotifications: LinearLayout = itemView.findViewById(R.id.llNotifications)
             private val btnToggleNotifications: Button = itemView.findViewById(R.id.btnToggleNotifications)
             private val btnDismissApp: Button = itemView.findViewById(R.id.btnDismissApp)
@@ -241,6 +243,29 @@ class InterceptedAppsActivity : AppCompatActivity() {
 
                 // Set notification count
                 tvNotificationCount.text = notifications.size.toString()
+
+                // Set up mimic checkbox
+                cbMimicNotifications.setOnCheckedChangeListener(null) // Clear previous listener
+                cbMimicNotifications.isChecked = NotificationStorage.isMimicEnabled(packageName, profileType)
+                cbMimicNotifications.setOnCheckedChangeListener { _, isChecked ->
+                    val wasEnabled = NotificationStorage.isMimicEnabled(packageName, profileType)
+                    NotificationStorage.setMimicEnabled(packageName, profileType, isChecked)
+
+                    // If just enabled, immediately mimic the latest notification to show it's working
+                    if (isChecked && !wasEnabled && notifications.isNotEmpty()) {
+                        val latestNotification = notifications.first()
+                        // Trigger mimic via intent to NotificationInterceptorService
+                        val intent = android.content.Intent(context, NotificationInterceptorService::class.java)
+                        intent.action = "MIMIC_NOTIFICATION"
+                        intent.putExtra("packageName", packageName)
+                        intent.putExtra("appName", latestNotification.appName)
+                        intent.putExtra("title", latestNotification.title)
+                        intent.putExtra("text", latestNotification.text)
+                        intent.putExtra("profileType", profileType.name)
+                        intent.putExtra("appIconBase64", NotificationStorage.getAppIcon(packageName, profileType))
+                        context.startService(intent)
+                    }
+                }
 
                 // Set up collapse/expand button
                 btnToggleNotifications.text = if (isExpanded)

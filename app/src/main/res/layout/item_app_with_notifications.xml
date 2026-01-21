@@ -84,6 +84,13 @@
 
             </LinearLayout>
 
+            <CheckBox
+                android:id="@+id/cbMimicNotifications"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:contentDescription="@string/mimic_notifications_description" />
+
             <TextView
                 android:id="@+id/tvNotificationCount"
                 android:layout_width="wrap_content"
