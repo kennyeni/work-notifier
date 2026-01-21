@@ -134,7 +134,9 @@ class NotificationInterceptorService : NotificationListenerService() {
             val packageManager = applicationContext.packageManager
             val appIcon = packageManager.getApplicationIcon(packageName)
             val bitmap = drawableToBitmap(appIcon)
-            bitmapToBase64(bitmap)
+            // Scale down to reduce storage size (96x96 is sufficient for display)
+            val scaledBitmap = scaleBitmap(bitmap, 96, 96)
+            bitmapToBase64(scaledBitmap)
         } catch (e: Exception) {
             Log.w(TAG, "Could not get app icon for $packageName", e)
             null
@@ -145,15 +147,14 @@ class NotificationInterceptorService : NotificationListenerService() {
      * Converts a Drawable to a Bitmap.
      */
     private fun drawableToBitmap(drawable: Drawable): Bitmap {
-        if (drawable is BitmapDrawable) {
+        if (drawable is BitmapDrawable && drawable.bitmap != null) {
             return drawable.bitmap
         }
 
-        val bitmap = Bitmap.createBitmap(
-            drawable.intrinsicWidth.coerceAtLeast(1),
-            drawable.intrinsicHeight.coerceAtLeast(1),
-            Bitmap.Config.ARGB_8888
-        )
+        val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 96
+        val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 96
+
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         drawable.setBounds(0, 0, canvas.width, canvas.height)
         drawable.draw(canvas)
@@ -161,14 +162,24 @@ class NotificationInterceptorService : NotificationListenerService() {
     }
 
     /**
+     * Scales a bitmap to the specified dimensions.
+     */
+    private fun scaleBitmap(bitmap: Bitmap, maxWidth: Int, maxHeight: Int): Bitmap {
+        if (bitmap.width <= maxWidth && bitmap.height <= maxHeight) {
+            return bitmap
+        }
+        return Bitmap.createScaledBitmap(bitmap, maxWidth, maxHeight, true)
+    }
+
+    /**
      * Converts a Bitmap to a Base64 encoded string.
      */
     private fun bitmapToBase64(bitmap: Bitmap): String {
         val byteArrayOutputStream = ByteArrayOutputStream()
-        // Compress to reduce storage size (PNG format, quality doesn't apply to PNG)
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream)
+        // Use JPEG with 85% quality for better compression (icons don't need PNG transparency usually)
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, byteArrayOutputStream)
         val byteArray = byteArrayOutputStream.toByteArray()
-        return Base64.encodeToString(byteArray, Base64.DEFAULT)
+        return Base64.encodeToString(byteArray, Base64.NO_WRAP)
     }
 
     /**

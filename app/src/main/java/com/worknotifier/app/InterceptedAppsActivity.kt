@@ -188,14 +188,21 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     ProfileType.PERSONAL
                 }
 
-                // Set app icon - try stored icon first, then PackageManager
+                // Set app icon - try stored icon first, then PackageManager, then default
                 val storedIconBase64 = notifications.firstOrNull()?.appIconBase64
-                val appIcon = if (storedIconBase64 != null) {
-                    decodeBase64ToDrawable(context, storedIconBase64)
-                } else {
-                    getAppIconFromPackageManager(context, packageName)
+                var appIcon: Drawable? = null
+
+                // Try stored icon first (works for all profiles)
+                if (!storedIconBase64.isNullOrBlank()) {
+                    appIcon = decodeBase64ToDrawable(context, storedIconBase64)
                 }
 
+                // Fallback to PackageManager (works for personal profile)
+                if (appIcon == null) {
+                    appIcon = getAppIconFromPackageManager(context, packageName)
+                }
+
+                // Set icon or use default
                 if (appIcon != null) {
                     ivAppIcon.setImageDrawable(appIcon)
                 } else {
@@ -323,9 +330,18 @@ class InterceptedAppsActivity : AppCompatActivity() {
              */
             private fun decodeBase64ToDrawable(context: Context, base64: String): Drawable? {
                 return try {
-                    val decodedBytes = Base64.decode(base64, Base64.DEFAULT)
+                    // Try NO_WRAP first (new format), then DEFAULT (old format) for compatibility
+                    val decodedBytes = try {
+                        Base64.decode(base64, Base64.NO_WRAP)
+                    } catch (e: Exception) {
+                        Base64.decode(base64, Base64.DEFAULT)
+                    }
                     val bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
-                    BitmapDrawable(context.resources, bitmap)
+                    if (bitmap != null) {
+                        BitmapDrawable(context.resources, bitmap)
+                    } else {
+                        null
+                    }
                 } catch (e: Exception) {
                     null
                 }
