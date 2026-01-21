@@ -12,4 +12,19 @@
     <string name="mark_as_read_action">Mark as Read</string>
     <string name="notification_posted">Test notification sent!</string>
     <string name="select_apps_placeholder">Feature coming soon</string>
+
+    <!-- Intercepted Apps Activity -->
+    <string name="intercepted_apps_title">Intercepted Notifications</string>
+    <string name="intercepted_apps_header">Intercepted Apps</string>
+    <string name="intercepted_status">Intercepted %1$d apps, %2$d notifications</string>
+    <string name="no_apps_intercepted">No apps intercepted yet</string>
+    <string name="no_intercepted_notifications">No notifications intercepted yet.\n\nEnable notification access and wait for notifications from other apps.</string>
+    <string name="enable_notification_access">Enable Notification Access</string>
+    <string name="app_icon_description">App icon</string>
+    <string name="no_title">(No title)</string>
+    <string name="no_content">(No content)</string>
+    <string name="work_profile_badge">WORK</string>
+    <string name="private_profile_badge">PRIVATE</string>
+    <string name="show_more">Show more</string>
+    <string name="show_less">Show less</string>
 </resources>

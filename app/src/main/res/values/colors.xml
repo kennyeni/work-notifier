@@ -7,4 +7,13 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Custom colors for better contrast -->
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B0B0B0</color>
+    <color name="text_tertiary">#808080</color>
+    <color name="card_background">#1E1E1E</color>
+    <color name="divider">#404040</color>
+    <color name="work_profile_badge">#FF9800</color>
+    <color name="private_profile_badge">#9C27B0</color>
 </resources>
