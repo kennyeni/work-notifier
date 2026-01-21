@@ -226,6 +226,7 @@ object NotificationStorage {
         // If include patterns exist, must match at least one
         if (filters.includePatterns.isNotEmpty()) {
             val matchesInclude = filters.includePatterns.any { pattern ->
+                if (pattern.isBlank()) return@any false // Skip empty patterns
                 try {
                     content.contains(Regex(pattern, RegexOption.IGNORE_CASE))
                 } catch (e: Exception) {
@@ -240,6 +241,7 @@ object NotificationStorage {
         // Must NOT match any exclude pattern
         if (filters.excludePatterns.isNotEmpty()) {
             val matchesExclude = filters.excludePatterns.any { pattern ->
+                if (pattern.isBlank()) return@any false // Skip empty patterns
                 try {
                     content.contains(Regex(pattern, RegexOption.IGNORE_CASE))
                 } catch (e: Exception) {
