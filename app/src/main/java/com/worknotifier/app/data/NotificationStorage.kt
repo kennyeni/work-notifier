@@ -56,9 +56,19 @@ object NotificationStorage {
     }
 
     /**
+     * Generates a content hash for deduplication based on title and text.
+     * Returns a consistent hash for notifications with identical content.
+     */
+    fun getContentHash(title: String?, text: String?): String {
+        val normalizedTitle = title?.trim() ?: ""
+        val normalizedText = text?.trim() ?: ""
+        return "$normalizedTitle|$normalizedText".hashCode().toString()
+    }
+
+    /**
      * Adds a notification to storage.
      * Keeps only the most recent MAX_NOTIFICATIONS_PER_APP notifications per app per profile.
-     * Deduplicates notifications based on their key to avoid showing duplicates.
+     * Deduplicates notifications based on content (title+text) to avoid showing duplicates.
      */
     fun addNotification(notification: InterceptedNotification) {
         // Validate notification has a valid key and timestamp
@@ -77,11 +87,11 @@ object NotificationStorage {
             mutableListOf()
         }
 
-        // Remove any existing notification with the same key (update case)
-        // Also remove any notification with the same title/text but invalid timestamp (duplicate detection)
+        // Remove any existing notification with the same key OR same content
+        // This prevents duplicates even when apps use different keys for same content
         appNotifications.removeAll {
             it.key == notification.key ||
-            (it.title == notification.title && it.text == notification.text && it.timestamp <= 0)
+            (it.title == notification.title && it.text == notification.text)
         }
 
         // Add the new notification at the beginning (without icon to save space)
