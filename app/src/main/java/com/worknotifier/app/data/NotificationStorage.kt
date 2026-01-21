@@ -233,10 +233,13 @@ object NotificationStorage {
         // Combine title and text for matching
         val content = "${notification.title ?: ""} ${notification.text ?: ""}".trim()
 
+        // Filter out blank patterns before checking
+        val validIncludePatterns = filters.includePatterns.filter { it.isNotBlank() }
+        val validExcludePatterns = filters.excludePatterns.filter { it.isNotBlank() }
+
         // If include patterns exist, must match at least one
-        if (filters.includePatterns.isNotEmpty()) {
-            val matchesInclude = filters.includePatterns.any { pattern ->
-                if (pattern.isBlank()) return@any false // Skip empty patterns
+        if (validIncludePatterns.isNotEmpty()) {
+            val matchesInclude = validIncludePatterns.any { pattern ->
                 try {
                     content.contains(Regex(pattern, RegexOption.IGNORE_CASE))
                 } catch (e: Exception) {
@@ -249,9 +252,8 @@ object NotificationStorage {
         }
 
         // Must NOT match any exclude pattern
-        if (filters.excludePatterns.isNotEmpty()) {
-            val matchesExclude = filters.excludePatterns.any { pattern ->
-                if (pattern.isBlank()) return@any false // Skip empty patterns
+        if (validExcludePatterns.isNotEmpty()) {
+            val matchesExclude = validExcludePatterns.any { pattern ->
                 try {
                     content.contains(Regex(pattern, RegexOption.IGNORE_CASE))
                 } catch (e: Exception) {

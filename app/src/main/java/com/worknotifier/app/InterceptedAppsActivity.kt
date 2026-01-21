@@ -9,6 +9,8 @@ import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Base64
 import android.view.LayoutInflater
@@ -178,6 +180,8 @@ class InterceptedAppsActivity : AppCompatActivity() {
 
             private var isExpanded = true
             private var isFiltersExpanded = false
+            private val debounceHandler = Handler(Looper.getMainLooper())
+            private val debounceDelay = 500L // milliseconds
 
             fun bind(
                 context: Context,
@@ -446,30 +450,38 @@ class InterceptedAppsActivity : AppCompatActivity() {
 
                 etPattern.setText(pattern)
 
-                // Save pattern when text changes
+                // Save pattern when text changes (with debouncing to reduce disk writes)
+                var saveRunnable: Runnable? = null
                 etPattern.addTextChangedListener(object : android.text.TextWatcher {
                     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                     override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
                     override fun afterTextChanged(s: android.text.Editable?) {
-                        val filters = NotificationStorage.getRegexFilters(packageName, profileType)
-                        val index = if (isInclude) {
-                            llIncludePatterns.indexOfChild(patternView)
-                        } else {
-                            llExcludePatterns.indexOfChild(patternView)
-                        }
+                        // Cancel previous save if still pending
+                        saveRunnable?.let { debounceHandler.removeCallbacks(it) }
 
-                        if (index >= 0) {
-                            val newPattern = s.toString()
-                            if (isInclude && index < filters.includePatterns.size) {
-                                filters.includePatterns[index] = newPattern
-                            } else if (!isInclude && index < filters.excludePatterns.size) {
-                                filters.excludePatterns[index] = newPattern
+                        // Schedule new save after delay
+                        saveRunnable = Runnable {
+                            val filters = NotificationStorage.getRegexFilters(packageName, profileType)
+                            val index = if (isInclude) {
+                                llIncludePatterns.indexOfChild(patternView)
+                            } else {
+                                llExcludePatterns.indexOfChild(patternView)
                             }
-                            NotificationStorage.setRegexFilters(packageName, profileType, filters)
 
-                            // Update notification visual indicators
-                            updateNotificationVisuals(notifications)
+                            if (index >= 0) {
+                                val newPattern = s.toString()
+                                if (isInclude && index < filters.includePatterns.size) {
+                                    filters.includePatterns[index] = newPattern
+                                } else if (!isInclude && index < filters.excludePatterns.size) {
+                                    filters.excludePatterns[index] = newPattern
+                                }
+                                NotificationStorage.setRegexFilters(packageName, profileType, filters)
+
+                                // Update notification visual indicators
+                                updateNotificationVisuals(notifications)
+                            }
                         }
+                        debounceHandler.postDelayed(saveRunnable!!, debounceDelay)
                     }
                 })
 
