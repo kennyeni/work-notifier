@@ -60,6 +60,9 @@ class NotificationInterceptorService : NotificationListenerService() {
     private val originalToMimic = ConcurrentHashMap<String, Int>()
     // Map<mimicNotificationId, originalNotificationKey>
     private val mimicToOriginal = ConcurrentHashMap<Int, String>()
+    // Track manual mimics by storage key (packageName|profileType) to prevent duplicates
+    // Map<storageKey, mimicNotificationId>
+    private val manualMimics = ConcurrentHashMap<String, Int>()
     private var nextMimicId = MIMIC_NOTIFICATION_ID_BASE
 
     // Broadcast receiver to handle mimic notification actions
@@ -204,8 +207,9 @@ class NotificationInterceptorService : NotificationListenerService() {
             // Store the notification
             NotificationStorage.addNotification(interceptedNotification)
 
-            // Check if mimicking is enabled for this app+profile
-            if (NotificationStorage.isMimicEnabled(packageName, profileType)) {
+            // Check if mimicking is enabled for this app+profile AND notification passes filters
+            if (NotificationStorage.isMimicEnabled(packageName, profileType) &&
+                NotificationStorage.matchesFilters(interceptedNotification)) {
                 createMimicNotification(
                     packageName = packageName,
                     appName = appName,
@@ -357,8 +361,9 @@ class NotificationInterceptorService : NotificationListenerService() {
             // Get or create a unique notification ID for this mimic
             val mimicId = nextMimicId++
 
-            // Track the relationship between original and mimic (if we have an original key)
+            // Track the relationship between original and mimic
             if (originalNotificationKey != null) {
+                // This is an automatic mimic from onNotificationPosted
                 // Cancel any existing mimic for this original notification
                 originalToMimic[originalNotificationKey]?.let { oldMimicId ->
                     notificationManager.cancel(oldMimicId)
@@ -366,6 +371,17 @@ class NotificationInterceptorService : NotificationListenerService() {
                 }
                 originalToMimic[originalNotificationKey] = mimicId
                 mimicToOriginal[mimicId] = originalNotificationKey
+            } else {
+                // This is a manual mimic (triggered by checkbox)
+                // Use storage key to prevent duplicates
+                val storageKey = "$packageName|${profileType.name}"
+                manualMimics[storageKey]?.let { oldMimicId ->
+                    // Cancel existing manual mimic for this app+profile
+                    notificationManager.cancel(oldMimicId)
+                    Log.d(TAG, "Cancelled previous manual mimic: $oldMimicId for $storageKey")
+                }
+                manualMimics[storageKey] = mimicId
+                Log.d(TAG, "Created manual mimic: $mimicId for $storageKey")
             }
 
             // Add profile badge to conversation title for Work/Private profiles
