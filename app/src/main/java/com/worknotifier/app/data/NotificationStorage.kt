@@ -8,11 +8,11 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Singleton to store intercepted notifications in memory and persistently.
- * Keeps the last 3 notifications per app per profile.
+ * Keeps the last 10 notifications per app per profile.
  */
 object NotificationStorage {
 
-    private const val MAX_NOTIFICATIONS_PER_APP = 3
+    private const val MAX_NOTIFICATIONS_PER_APP = 10
     private const val PREFS_NAME = "notification_storage"
     private const val KEY_NOTIFICATIONS = "notifications"
 

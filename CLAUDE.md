@@ -21,7 +21,7 @@ The app uses `NotificationListenerService` to intercept notifications from:
 - Dark theme optimized interface
 - App icons and names
 - Profile badges (orange "WORK", purple "PRIVATE") - now shows per profile instance
-- Last 3 notifications per app per profile
+- Last 10 notifications per app per profile (unique, deduplicated)
 - Expand/collapse for long notification text
 - Collapse/expand notifications per app to reduce clutter
 - Dismiss individual notifications or entire apps from history
@@ -93,7 +93,7 @@ Persistent and in-memory storage with:
 - **Composite key**: Stores apps by "packageName|profileType" to differentiate same app across profiles
 - **Deduplication**: Enhanced validation - removes duplicates by notification key and rejects invalid entries
 - **Persistence**: Saves to SharedPreferences using Gson serialization, survives app restarts
-- **Maximum**: 3 notifications per app per profile
+- **Maximum**: 10 unique notifications per app per profile
 - **Thread-safe**: ConcurrentHashMap for concurrent access
 - **Dismiss functionality**: Remove individual notifications or entire app instances
 
