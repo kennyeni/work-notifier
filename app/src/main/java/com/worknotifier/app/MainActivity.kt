@@ -18,6 +18,7 @@ import androidx.core.app.Person
 import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
+import com.worknotifier.app.data.NotificationStorage
 
 class MainActivity : AppCompatActivity() {
 
@@ -30,6 +31,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Initialize notification storage
+        NotificationStorage.init(applicationContext)
 
         // Create notification channel
         createNotificationChannel()
