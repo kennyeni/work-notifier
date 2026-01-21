@@ -23,6 +23,9 @@ import android.service.notification.StatusBarNotification
 import android.util.Base64
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.Person
+import androidx.core.app.RemoteInput
+import androidx.core.graphics.drawable.IconCompat
 import com.worknotifier.app.data.InterceptedNotification
 import com.worknotifier.app.data.NotificationStorage
 import com.worknotifier.app.data.ProfileType
@@ -43,7 +46,10 @@ class NotificationInterceptorService : NotificationListenerService() {
         private const val MIMIC_CHANNEL_NAME = "Mimic Notifications"
         private const val MIMIC_NOTIFICATION_ID_BASE = 100000
         private const val ACTION_MIMIC_DISMISSED = "com.worknotifier.app.MIMIC_DISMISSED"
+        private const val ACTION_MIMIC_REPLY = "com.worknotifier.app.MIMIC_REPLY"
+        private const val ACTION_MIMIC_MARK_READ = "com.worknotifier.app.MIMIC_MARK_READ"
         private const val EXTRA_ORIGINAL_KEY = "original_key"
+        private const val REMOTE_INPUT_KEY = "remote_input_key"
     }
 
     private var isRooted: Boolean = false
@@ -56,24 +62,35 @@ class NotificationInterceptorService : NotificationListenerService() {
     private val mimicToOriginal = ConcurrentHashMap<Int, String>()
     private var nextMimicId = MIMIC_NOTIFICATION_ID_BASE
 
-    // Broadcast receiver to handle mimic notification dismissals
-    private val mimicDismissReceiver = object : BroadcastReceiver() {
+    // Broadcast receiver to handle mimic notification actions
+    private val mimicActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == ACTION_MIMIC_DISMISSED) {
-                val originalKey = intent.getStringExtra(EXTRA_ORIGINAL_KEY)
-                if (originalKey != null) {
-                    // Cancel the original notification
-                    try {
-                        val statusBarNotifications = activeNotifications
-                        val originalNotification = statusBarNotifications.find { it.key == originalKey }
-                        if (originalNotification != null) {
-                            cancelNotification(originalKey)
-                            originalToMimic.remove(originalKey)
-                            Log.d(TAG, "Mimic dismissed, cancelling original: $originalKey")
+            when (intent?.action) {
+                ACTION_MIMIC_DISMISSED -> {
+                    val originalKey = intent.getStringExtra(EXTRA_ORIGINAL_KEY)
+                    if (originalKey != null) {
+                        // Cancel the original notification
+                        try {
+                            val statusBarNotifications = activeNotifications
+                            val originalNotification = statusBarNotifications.find { it.key == originalKey }
+                            if (originalNotification != null) {
+                                cancelNotification(originalKey)
+                                originalToMimic.remove(originalKey)
+                                Log.d(TAG, "Mimic dismissed, cancelling original: $originalKey")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error cancelling original notification", e)
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error cancelling original notification", e)
                     }
+                }
+                ACTION_MIMIC_REPLY -> {
+                    // Reply action does nothing as per requirements
+                    val replyText = RemoteInput.getResultsFromIntent(intent)?.getString(REMOTE_INPUT_KEY)
+                    Log.d(TAG, "Mimic reply action (does nothing): $replyText")
+                }
+                ACTION_MIMIC_MARK_READ -> {
+                    // Mark as read action does nothing as per requirements
+                    Log.d(TAG, "Mimic mark as read action (does nothing)")
                 }
             }
         }
@@ -86,9 +103,13 @@ class NotificationInterceptorService : NotificationListenerService() {
         // Create notification channel for mimic notifications
         createMimicNotificationChannel()
 
-        // Register broadcast receiver for mimic dismissals
-        val filter = IntentFilter(ACTION_MIMIC_DISMISSED)
-        registerReceiver(mimicDismissReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        // Register broadcast receiver for mimic actions
+        val filter = IntentFilter().apply {
+            addAction(ACTION_MIMIC_DISMISSED)
+            addAction(ACTION_MIMIC_REPLY)
+            addAction(ACTION_MIMIC_MARK_READ)
+        }
+        registerReceiver(mimicActionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
 
         // Check for root and get user profile info
         isRooted = RootUtils.isRooted()
@@ -106,7 +127,7 @@ class NotificationInterceptorService : NotificationListenerService() {
 
         // Unregister broadcast receiver
         try {
-            unregisterReceiver(mimicDismissReceiver)
+            unregisterReceiver(mimicActionReceiver)
         } catch (e: Exception) {
             Log.e(TAG, "Error unregistering receiver", e)
         }
@@ -318,6 +339,7 @@ class NotificationInterceptorService : NotificationListenerService() {
 
     /**
      * Creates a mimic notification that duplicates the original notification.
+     * Uses MessagingStyle for Android Auto compatibility.
      */
     private fun createMimicNotification(
         packageName: String,
@@ -346,52 +368,125 @@ class NotificationInterceptorService : NotificationListenerService() {
                 mimicToOriginal[mimicId] = originalNotificationKey
             }
 
-            // Create the notification builder
-            val builder = NotificationCompat.Builder(this, MIMIC_CHANNEL_ID)
-                .setContentTitle(title ?: "Notification from $appName")
-                .setContentText(text ?: "")
-                .setSmallIcon(R.mipmap.ic_launcher) // Use app icon as small icon
-                .setAutoCancel(true)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            // Add profile badge to conversation title for Work/Private profiles
+            val profileBadge = when (profileType) {
+                ProfileType.WORK -> " [WORK]"
+                ProfileType.PRIVATE -> " [PRIVATE]"
+                ProfileType.PERSONAL -> ""
+            }
 
-            // Set app icon if available
+            // Create Person objects for MessagingStyle (required for Android Auto)
+            val senderName = title ?: appName
+            val senderPerson = Person.Builder()
+                .setName("$senderName$profileBadge")
+                .apply {
+                    appIconBase64?.let { iconBase64 ->
+                        decodeBase64ToBitmap(iconBase64)?.let { bitmap ->
+                            setIcon(IconCompat.createWithBitmap(bitmap))
+                        }
+                    }
+                }
+                .build()
+
+            val deviceUser = Person.Builder()
+                .setName("You")
+                .build()
+
+            // Try to extract existing MessagingStyle from original notification
+            val originalMessagingStyle = originalNotification?.let { notif ->
+                try {
+                    NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notif)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+
+            // Create or recreate MessagingStyle for Android Auto compatibility
+            val messagingStyle = if (originalMessagingStyle != null) {
+                // Use original MessagingStyle if available
+                originalMessagingStyle
+            } else {
+                // Create new MessagingStyle with the message
+                NotificationCompat.MessagingStyle(deviceUser)
+                    .setConversationTitle("$senderName$profileBadge")
+                    .addMessage(
+                        text ?: "(No message content)",
+                        System.currentTimeMillis(),
+                        senderPerson
+                    )
+            }
+
+            // Create Reply action (required for Android Auto)
+            val replyIntent = Intent(ACTION_MIMIC_REPLY).apply {
+                setPackage(applicationContext.packageName)
+                putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
+            }
+            val replyPendingIntent = PendingIntent.getBroadcast(
+                this,
+                mimicId,
+                replyIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            )
+            val remoteInput = RemoteInput.Builder(REMOTE_INPUT_KEY)
+                .setLabel("Reply")
+                .build()
+            val replyAction = NotificationCompat.Action.Builder(
+                R.drawable.ic_reply,
+                "Reply",
+                replyPendingIntent
+            )
+                .addRemoteInput(remoteInput)
+                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+                .setShowsUserInterface(false)
+                .build()
+
+            // Create Mark as Read action (required for Android Auto)
+            val markReadIntent = Intent(ACTION_MIMIC_MARK_READ).apply {
+                setPackage(applicationContext.packageName)
+                putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
+            }
+            val markReadPendingIntent = PendingIntent.getBroadcast(
+                this,
+                mimicId + 1,
+                markReadIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val markReadAction = NotificationCompat.Action.Builder(
+                R.drawable.ic_mark_read,
+                "Mark as Read",
+                markReadPendingIntent
+            )
+                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+                .setShowsUserInterface(false)
+                .build()
+
+            // Create the notification builder with MessagingStyle
+            val builder = NotificationCompat.Builder(this, MIMIC_CHANNEL_ID)
+                .setStyle(messagingStyle)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .addAction(replyAction)
+                .addAction(markReadAction)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+
+            // Set app icon as large icon if available
             appIconBase64?.let { iconBase64 ->
                 decodeBase64ToBitmap(iconBase64)?.let { bitmap ->
                     builder.setLargeIcon(bitmap)
                 }
             }
 
-            // Add profile badge to the notification title if it's from Work or Private profile
-            val profileBadge = when (profileType) {
-                ProfileType.WORK -> " [WORK]"
-                ProfileType.PRIVATE -> " [PRIVATE]"
-                ProfileType.PERSONAL -> ""
-            }
-            if (profileBadge.isNotEmpty()) {
-                builder.setContentTitle("${title ?: "Notification"}$profileBadge")
-            }
-
-            // Copy actions from original notification if available
-            originalNotification?.actions?.forEach { action ->
-                // Note: For now, actions do nothing (as per requirements)
-                // We're just copying the action labels and icons
-                val actionBuilder = NotificationCompat.Action.Builder(
-                    action.icon,
-                    action.title,
-                    null // No pending intent - actions do nothing
-                )
-                builder.addAction(actionBuilder.build())
-            }
-
             // Add delete intent to cancel original notification when mimic is dismissed
             if (originalNotificationKey != null) {
                 val deleteIntent = Intent(ACTION_MIMIC_DISMISSED).apply {
-                    setPackage(applicationContext.packageName) // Make explicit for Android 14+
+                    setPackage(applicationContext.packageName)
                     putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey)
                 }
                 val deletePendingIntent = PendingIntent.getBroadcast(
                     this,
-                    mimicId,
+                    mimicId + 2,
                     deleteIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
@@ -401,7 +496,7 @@ class NotificationInterceptorService : NotificationListenerService() {
             // Post the mimic notification
             notificationManager.notify(mimicId, builder.build())
 
-            Log.d(TAG, "Mimic notification created: ID=$mimicId, App=$appName, Title=$title")
+            Log.d(TAG, "Mimic notification created with MessagingStyle: ID=$mimicId, App=$appName")
         } catch (e: Exception) {
             Log.e(TAG, "Error creating mimic notification", e)
         }
