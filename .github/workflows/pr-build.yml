@@ -11,6 +11,10 @@ on:
   push:
     branches: [ main, master ]
 
+permissions:
+  contents: read   # Read repository contents
+  checks: write    # Post build status checks
+
 jobs:
   build:
     name: Build Android App
