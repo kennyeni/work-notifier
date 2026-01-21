@@ -189,7 +189,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
                 }
 
                 // Set app icon - try stored icon first, then PackageManager, then default
-                val storedIconBase64 = notifications.firstOrNull()?.appIconBase64
+                val storedIconBase64 = NotificationStorage.getAppIconByKey(storageKey)
                 var appIcon: Drawable? = null
 
                 // Try stored icon first (works for all profiles)

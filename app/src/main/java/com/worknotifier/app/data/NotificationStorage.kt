@@ -15,9 +15,12 @@ object NotificationStorage {
     private const val MAX_NOTIFICATIONS_PER_APP = 10
     private const val PREFS_NAME = "notification_storage"
     private const val KEY_NOTIFICATIONS = "notifications"
+    private const val KEY_APP_ICONS = "app_icons"
 
     // Map key: "packageName|profileType"
     private val notifications = ConcurrentHashMap<String, MutableList<InterceptedNotification>>()
+    // Separate storage for app icons to avoid duplication
+    private val appIcons = ConcurrentHashMap<String, String>()
     private val gson = Gson()
     private var sharedPrefs: SharedPreferences? = null
 
@@ -48,6 +51,12 @@ object NotificationStorage {
         }
 
         val storageKey = getStorageKey(notification.packageName, notification.profileType)
+
+        // Store app icon separately if provided (only once per app+profile)
+        if (!notification.appIconBase64.isNullOrBlank() && !appIcons.containsKey(storageKey)) {
+            appIcons[storageKey] = notification.appIconBase64
+        }
+
         val appNotifications = notifications.getOrPut(storageKey) {
             mutableListOf()
         }
@@ -59,8 +68,9 @@ object NotificationStorage {
             (it.title == notification.title && it.text == notification.text && it.timestamp <= 0)
         }
 
-        // Add the new notification at the beginning
-        appNotifications.add(0, notification)
+        // Add the new notification at the beginning (without icon to save space)
+        val notificationWithoutIcon = notification.copy(appIconBase64 = null)
+        appNotifications.add(0, notificationWithoutIcon)
 
         // Keep only the most recent notifications
         if (appNotifications.size > MAX_NOTIFICATIONS_PER_APP) {
@@ -94,6 +104,21 @@ object NotificationStorage {
     }
 
     /**
+     * Gets the app icon for a specific app and profile combination.
+     */
+    fun getAppIcon(packageName: String, profileType: ProfileType): String? {
+        val storageKey = getStorageKey(packageName, profileType)
+        return appIcons[storageKey]
+    }
+
+    /**
+     * Gets the app icon by storage key.
+     */
+    fun getAppIconByKey(storageKey: String): String? {
+        return appIcons[storageKey]
+    }
+
+    /**
      * Removes a specific notification by its key.
      */
     fun removeNotification(packageName: String, profileType: ProfileType, notificationKey: String) {
@@ -115,6 +140,7 @@ object NotificationStorage {
     fun removeApp(packageName: String, profileType: ProfileType) {
         val storageKey = getStorageKey(packageName, profileType)
         notifications.remove(storageKey)
+        appIcons.remove(storageKey)
         saveToPrefs()
     }
 
@@ -123,6 +149,7 @@ object NotificationStorage {
      */
     fun clear() {
         notifications.clear()
+        appIcons.clear()
         saveToPrefs()
     }
 
@@ -141,15 +168,24 @@ object NotificationStorage {
     }
 
     /**
-     * Saves notifications to SharedPreferences.
+     * Saves notifications and icons to SharedPreferences.
      */
     private fun saveToPrefs() {
         sharedPrefs?.let { prefs ->
             try {
-                // Convert map to serializable format
-                val dataToSave = notifications.mapValues { it.value.toList() }
-                val json = gson.toJson(dataToSave)
-                prefs.edit().putString(KEY_NOTIFICATIONS, json).apply()
+                val editor = prefs.edit()
+
+                // Save notifications
+                val notificationsToSave = notifications.mapValues { it.value.toList() }
+                val notificationsJson = gson.toJson(notificationsToSave)
+                editor.putString(KEY_NOTIFICATIONS, notificationsJson)
+
+                // Save app icons separately
+                val iconsToSave = appIcons.toMap()
+                val iconsJson = gson.toJson(iconsToSave)
+                editor.putString(KEY_APP_ICONS, iconsJson)
+
+                editor.apply()
             } catch (e: Exception) {
                 // Log error but don't crash
             }
@@ -157,23 +193,34 @@ object NotificationStorage {
     }
 
     /**
-     * Loads notifications from SharedPreferences.
+     * Loads notifications and icons from SharedPreferences.
      */
     private fun loadFromPrefs() {
         sharedPrefs?.let { prefs ->
             try {
-                val json = prefs.getString(KEY_NOTIFICATIONS, null) ?: return
-                val type = object : TypeToken<Map<String, List<InterceptedNotification>>>() {}.type
-                val loadedData: Map<String, List<InterceptedNotification>> = gson.fromJson(json, type)
+                // Load notifications
+                val notificationsJson = prefs.getString(KEY_NOTIFICATIONS, null)
+                if (notificationsJson != null) {
+                    val type = object : TypeToken<Map<String, List<InterceptedNotification>>>() {}.type
+                    val loadedData: Map<String, List<InterceptedNotification>> = gson.fromJson(notificationsJson, type)
+                    notifications.clear()
+                    loadedData.forEach { (key, notificationList) ->
+                        notifications[key] = notificationList.toMutableList()
+                    }
+                }
 
-                // Clear and reload
-                notifications.clear()
-                loadedData.forEach { (key, notificationList) ->
-                    notifications[key] = notificationList.toMutableList()
+                // Load app icons
+                val iconsJson = prefs.getString(KEY_APP_ICONS, null)
+                if (iconsJson != null) {
+                    val type = object : TypeToken<Map<String, String>>() {}.type
+                    val loadedIcons: Map<String, String> = gson.fromJson(iconsJson, type)
+                    appIcons.clear()
+                    appIcons.putAll(loadedIcons)
                 }
             } catch (e: Exception) {
                 // If loading fails, start fresh
                 notifications.clear()
+                appIcons.clear()
             }
         }
     }
