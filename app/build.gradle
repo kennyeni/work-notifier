@@ -33,11 +33,18 @@ android {
             // Check if local.properties exists (CI build with generated keystore)
             if (localPropsFile.exists() && gradle.ext.has('localProps')) {
                 def localProps = gradle.ext.localProps
-                // Use rootProject.file() to resolve path from root project directory
-                storeFile rootProject.file(localProps['storeFile'])
-                storePassword localProps['storePassword']
-                keyAlias localProps['keyAlias']
-                keyPassword localProps['keyPassword']
+                def keystoreFile = rootProject.file(localProps['storeFile'])
+                // build_jks.gradle should have created the keystore by now
+                // Only configure signing if the file exists
+                if (keystoreFile.exists()) {
+                    storeFile keystoreFile
+                    storePassword localProps['storePassword']
+                    keyAlias localProps['keyAlias']
+                    keyPassword localProps['keyPassword']
+                } else {
+                    println "WARNING: Keystore file not found at ${keystoreFile.absolutePath}"
+                    println "build_jks.gradle may not have run successfully"
+                }
             } else {
                 // Local development: use standard debug keystore if it exists
                 def debugKeystorePath = "${System.getProperty('user.home')}/.android/debug.keystore"
