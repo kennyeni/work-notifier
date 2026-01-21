@@ -386,6 +386,7 @@ class NotificationInterceptorService : NotificationListenerService() {
             // Add delete intent to cancel original notification when mimic is dismissed
             if (originalNotificationKey != null) {
                 val deleteIntent = Intent(ACTION_MIMIC_DISMISSED).apply {
+                    setPackage(applicationContext.packageName) // Make explicit for Android 14+
                     putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey)
                 }
                 val deletePendingIntent = PendingIntent.getBroadcast(
