@@ -19,7 +19,7 @@ The app uses `NotificationListenerService` to intercept notifications from:
 
 ### UI Features
 - Dark theme optimized interface
-- App icons and names
+- App icons and names (cross-profile icon support - Work/Private app icons displayed correctly)
 - Profile badges (orange "WORK", purple "PRIVATE") - now shows per profile instance
 - Last 10 notifications per app per profile (unique, deduplicated)
 - Expand/collapse for long notification text
@@ -46,8 +46,8 @@ work-notifier/
 │   │   ├── NotificationInterceptorService.kt  # Core interception logic
 │   │   ├── InterceptedAppsActivity.kt        # Display intercepted apps
 │   │   ├── data/
-│   │   │   ├── InterceptedNotification.kt    # Data model with ProfileType enum
-│   │   │   └── NotificationStorage.kt        # In-memory storage
+│   │   │   ├── InterceptedNotification.kt    # Data model with ProfileType enum and icon storage
+│   │   │   └── NotificationStorage.kt        # Persistent and in-memory storage
 │   │   └── utils/
 │   │       └── RootUtils.kt                  # Optional root features
 │   └── build.gradle
@@ -78,7 +78,13 @@ Core service that intercepts notifications using `NotificationListenerService`.
 **Key Methods:**
 - `onNotificationPosted()`: Called when a notification is posted
 - `determineProfileType()`: Detects if notification is from PERSONAL/WORK/PRIVATE profile
+- `getAppIconBase64()`: Captures app icon and encodes as Base64 for cross-profile support
 - Uses `UserHandle` comparison and optional root access for accurate profile detection
+
+**Cross-Profile Icon Support:**
+- Captures app icons when notifications are intercepted (works for all profiles)
+- Encodes icons as Base64 and stores with notification data
+- Solves the issue where personal profile PackageManager can't access Work/Private app icons
 
 ### InterceptedAppsActivity.kt
 Displays intercepted apps and their notifications with:

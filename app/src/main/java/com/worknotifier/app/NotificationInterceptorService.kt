@@ -3,16 +3,22 @@ package com.worknotifier.app
 import android.app.Notification
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.os.Process
 import android.os.UserHandle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Base64
 import android.util.Log
 import com.worknotifier.app.data.InterceptedNotification
 import com.worknotifier.app.data.NotificationStorage
 import com.worknotifier.app.data.ProfileType
 import com.worknotifier.app.utils.RootUtils
+import java.io.ByteArrayOutputStream
 
 /**
  * NotificationListenerService to intercept notifications from all apps.
@@ -66,8 +72,9 @@ class NotificationInterceptorService : NotificationListenerService() {
             val timestamp = sbn.postTime
             val key = sbn.key
 
-            // Get app name
+            // Get app name and icon
             val appName = getAppName(packageName)
+            val appIconBase64 = getAppIconBase64(packageName)
 
             // Determine profile type and user ID
             val (profileType, userId) = determineProfileType(sbn)
@@ -81,7 +88,8 @@ class NotificationInterceptorService : NotificationListenerService() {
                 timestamp = timestamp,
                 key = key,
                 profileType = profileType,
-                userId = userId
+                userId = userId,
+                appIconBase64 = appIconBase64
             )
 
             // Store the notification
@@ -115,6 +123,52 @@ class NotificationInterceptorService : NotificationListenerService() {
         } catch (e: PackageManager.NameNotFoundException) {
             packageName // Fallback to package name if app name not found
         }
+    }
+
+    /**
+     * Gets the app icon and encodes it as Base64 string for storage.
+     * This allows icons from Work and Private profiles to be displayed correctly.
+     */
+    private fun getAppIconBase64(packageName: String): String? {
+        return try {
+            val packageManager = applicationContext.packageManager
+            val appIcon = packageManager.getApplicationIcon(packageName)
+            val bitmap = drawableToBitmap(appIcon)
+            bitmapToBase64(bitmap)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not get app icon for $packageName", e)
+            null
+        }
+    }
+
+    /**
+     * Converts a Drawable to a Bitmap.
+     */
+    private fun drawableToBitmap(drawable: Drawable): Bitmap {
+        if (drawable is BitmapDrawable) {
+            return drawable.bitmap
+        }
+
+        val bitmap = Bitmap.createBitmap(
+            drawable.intrinsicWidth.coerceAtLeast(1),
+            drawable.intrinsicHeight.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
+        )
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        return bitmap
+    }
+
+    /**
+     * Converts a Bitmap to a Base64 encoded string.
+     */
+    private fun bitmapToBase64(bitmap: Bitmap): String {
+        val byteArrayOutputStream = ByteArrayOutputStream()
+        // Compress to reduce storage size (PNG format, quality doesn't apply to PNG)
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream)
+        val byteArray = byteArrayOutputStream.toByteArray()
+        return Base64.encodeToString(byteArray, Base64.DEFAULT)
     }
 
     /**

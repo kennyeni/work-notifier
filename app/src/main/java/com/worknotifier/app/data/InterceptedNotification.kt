@@ -20,7 +20,8 @@ data class InterceptedNotification(
     val timestamp: Long,
     val key: String,
     val profileType: ProfileType = ProfileType.PERSONAL,
-    val userId: Int = 0
+    val userId: Int = 0,
+    val appIconBase64: String? = null  // Base64 encoded app icon for cross-profile support
 ) {
     // Backwards compatibility
     val isWorkProfile: Boolean

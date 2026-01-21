@@ -4,9 +4,13 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Base64
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -184,8 +188,14 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     ProfileType.PERSONAL
                 }
 
-                // Set app icon
-                val appIcon = getAppIcon(context, packageName)
+                // Set app icon - try stored icon first, then PackageManager
+                val storedIconBase64 = notifications.firstOrNull()?.appIconBase64
+                val appIcon = if (storedIconBase64 != null) {
+                    decodeBase64ToDrawable(context, storedIconBase64)
+                } else {
+                    getAppIconFromPackageManager(context, packageName)
+                }
+
                 if (appIcon != null) {
                     ivAppIcon.setImageDrawable(appIcon)
                 } else {
@@ -308,7 +318,23 @@ class InterceptedAppsActivity : AppCompatActivity() {
                 }
             }
 
-            private fun getAppIcon(context: Context, packageName: String): Drawable? {
+            /**
+             * Decodes a Base64 encoded string back to a Drawable.
+             */
+            private fun decodeBase64ToDrawable(context: Context, base64: String): Drawable? {
+                return try {
+                    val decodedBytes = Base64.decode(base64, Base64.DEFAULT)
+                    val bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+                    BitmapDrawable(context.resources, bitmap)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+
+            /**
+             * Gets app icon from PackageManager (fallback for personal profile apps).
+             */
+            private fun getAppIconFromPackageManager(context: Context, packageName: String): Drawable? {
                 return try {
                     context.packageManager.getApplicationIcon(packageName)
                 } catch (e: PackageManager.NameNotFoundException) {
