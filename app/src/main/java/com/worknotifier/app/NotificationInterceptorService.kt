@@ -29,6 +29,7 @@ import androidx.core.graphics.drawable.IconCompat
 import com.worknotifier.app.data.InterceptedNotification
 import com.worknotifier.app.data.NotificationStorage
 import com.worknotifier.app.data.ProfileType
+import com.worknotifier.app.utils.AndroidAutoDetector
 import com.worknotifier.app.utils.RootUtils
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -130,6 +131,9 @@ class NotificationInterceptorService : NotificationListenerService() {
         super.onListenerConnected()
         Log.d(TAG, "Notification Listener Connected")
 
+        // Initialize Android Auto detector
+        AndroidAutoDetector.initialize(applicationContext)
+
         // Clean up tracking maps to prevent memory leaks
         // Remove entries for notifications that no longer exist
         cleanupStaleEntries()
@@ -227,16 +231,21 @@ class NotificationInterceptorService : NotificationListenerService() {
             }
             val appIconBase64 = intent.getStringExtra("appIconBase64")
 
-            // Create the mimic notification
-            createMimicNotification(
-                packageName = packageName,
-                appName = appName,
-                title = title,
-                text = text,
-                profileType = profileType,
-                appIconBase64 = appIconBase64,
-                originalNotificationKey = null // No original notification key for manual mimic
-            )
+            // Only create mimic if Android Auto conditions are met
+            if (shouldCreateMimic()) {
+                // Create the mimic notification
+                createMimicNotification(
+                    packageName = packageName,
+                    appName = appName,
+                    title = title,
+                    text = text,
+                    profileType = profileType,
+                    appIconBase64 = appIconBase64,
+                    originalNotificationKey = null // No original notification key for manual mimic
+                )
+            } else {
+                Log.d(TAG, "Manual mimic skipped: Android Auto Only Mode enabled but not connected")
+            }
         }
         return START_NOT_STICKY
     }
@@ -283,9 +292,14 @@ class NotificationInterceptorService : NotificationListenerService() {
             // Store the notification
             NotificationStorage.addNotification(interceptedNotification)
 
-            // Check if mimicking is enabled for this app+profile AND notification passes filters
+            // Check if we should create a mimic notification
+            // Conditions:
+            // 1. Mimic is enabled for this app+profile
+            // 2. Notification passes regex filters
+            // 3. If Android Auto Only Mode is enabled, must be connected to Android Auto
             if (NotificationStorage.isMimicEnabled(packageName, profileType) &&
-                NotificationStorage.matchesFilters(interceptedNotification)) {
+                NotificationStorage.matchesFilters(interceptedNotification) &&
+                shouldCreateMimic()) {
                 createMimicNotification(
                     packageName = packageName,
                     appName = appName,
@@ -420,6 +434,27 @@ class NotificationInterceptorService : NotificationListenerService() {
         bitmap.compress(Bitmap.CompressFormat.JPEG, 85, byteArrayOutputStream)
         val byteArray = byteArrayOutputStream.toByteArray()
         return Base64.encodeToString(byteArray, Base64.NO_WRAP)
+    }
+
+    /**
+     * Determines if a mimic notification should be created based on Android Auto settings.
+     *
+     * Returns true if:
+     * - Android Auto Only Mode is disabled (always create mimics), OR
+     * - Android Auto Only Mode is enabled AND device is connected to Android Auto
+     */
+    private fun shouldCreateMimic(): Boolean {
+        val androidAutoOnlyMode = NotificationStorage.isAndroidAutoOnlyMode()
+
+        return if (androidAutoOnlyMode) {
+            // Only create mimic if connected to Android Auto
+            val isConnected = AndroidAutoDetector.isConnectedToAndroidAuto()
+            Log.d(TAG, "Android Auto Only Mode enabled. Connected: $isConnected")
+            isConnected
+        } else {
+            // Always create mimics when mode is disabled
+            true
+        }
     }
 
     /**
