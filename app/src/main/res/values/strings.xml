@@ -32,4 +32,15 @@
     <string name="dismiss">Dismiss</string>
     <string name="dismiss_app">Dismiss App</string>
     <string name="mimic_notifications_description">Enable notification mimicking for this app</string>
+
+    <!-- Regex Filters -->
+    <string name="show_filters">Show Filters</string>
+    <string name="hide_filters">Hide Filters</string>
+    <string name="filter_logic_explanation">Include = must match (allowlist), Exclude = must NOT match (blocklist). Regex patterns supported.</string>
+    <string name="include_patterns_label">Include Patterns (allowlist)</string>
+    <string name="exclude_patterns_label">Exclude Patterns (blocklist)</string>
+    <string name="add_include_pattern">+ Add Include Pattern</string>
+    <string name="add_exclude_pattern">+ Add Exclude Pattern</string>
+    <string name="pattern_hint">Enter regex pattern</string>
+    <string name="remove_pattern">Remove</string>
 </resources>

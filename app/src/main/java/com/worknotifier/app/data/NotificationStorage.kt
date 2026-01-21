@@ -7,6 +7,16 @@ import com.google.gson.reflect.TypeToken
 import java.util.concurrent.ConcurrentHashMap
 
 /**
+ * Regex filters for an app's notifications.
+ * Logic: If include patterns exist, notification must match at least one.
+ * Then, notification must NOT match any exclude pattern.
+ */
+data class RegexFilters(
+    val includePatterns: MutableList<String> = mutableListOf(),
+    val excludePatterns: MutableList<String> = mutableListOf()
+)
+
+/**
  * Singleton to store intercepted notifications in memory and persistently.
  * Keeps the last 10 notifications per app per profile.
  */
@@ -17,6 +27,7 @@ object NotificationStorage {
     private const val KEY_NOTIFICATIONS = "notifications"
     private const val KEY_APP_ICONS = "app_icons"
     private const val KEY_MIMIC_ENABLED = "mimic_enabled"
+    private const val KEY_REGEX_FILTERS = "regex_filters"
 
     // Map key: "packageName|profileType"
     private val notifications = ConcurrentHashMap<String, MutableList<InterceptedNotification>>()
@@ -24,6 +35,8 @@ object NotificationStorage {
     private val appIcons = ConcurrentHashMap<String, String>()
     // Track which app+profile combinations should be mimicked
     private val mimicEnabled = ConcurrentHashMap<String, Boolean>()
+    // Regex filters for each app+profile combination
+    private val regexFilters = ConcurrentHashMap<String, RegexFilters>()
     private val gson = Gson()
     private var sharedPrefs: SharedPreferences? = null
 
@@ -43,9 +56,19 @@ object NotificationStorage {
     }
 
     /**
+     * Generates a content hash for deduplication based on title and text.
+     * Returns a consistent hash for notifications with identical content.
+     */
+    fun getContentHash(title: String?, text: String?): String {
+        val normalizedTitle = title?.trim() ?: ""
+        val normalizedText = text?.trim() ?: ""
+        return "$normalizedTitle|$normalizedText".hashCode().toString()
+    }
+
+    /**
      * Adds a notification to storage.
      * Keeps only the most recent MAX_NOTIFICATIONS_PER_APP notifications per app per profile.
-     * Deduplicates notifications based on their key to avoid showing duplicates.
+     * Deduplicates notifications based on content (title+text) to avoid showing duplicates.
      */
     fun addNotification(notification: InterceptedNotification) {
         // Validate notification has a valid key and timestamp
@@ -64,11 +87,11 @@ object NotificationStorage {
             mutableListOf()
         }
 
-        // Remove any existing notification with the same key (update case)
-        // Also remove any notification with the same title/text but invalid timestamp (duplicate detection)
+        // Remove any existing notification with the same key OR same content
+        // This prevents duplicates even when apps use different keys for same content
         appNotifications.removeAll {
             it.key == notification.key ||
-            (it.title == notification.title && it.text == notification.text && it.timestamp <= 0)
+            (it.title == notification.title && it.text == notification.text)
         }
 
         // Add the new notification at the beginning (without icon to save space)
@@ -154,6 +177,7 @@ object NotificationStorage {
         notifications.clear()
         appIcons.clear()
         mimicEnabled.clear()
+        regexFilters.clear()
         saveToPrefs()
     }
 
@@ -176,6 +200,72 @@ object NotificationStorage {
     fun isMimicEnabled(packageName: String, profileType: ProfileType): Boolean {
         val storageKey = getStorageKey(packageName, profileType)
         return mimicEnabled[storageKey] == true
+    }
+
+    /**
+     * Gets regex filters for an app+profile combination.
+     */
+    fun getRegexFilters(packageName: String, profileType: ProfileType): RegexFilters {
+        val storageKey = getStorageKey(packageName, profileType)
+        return regexFilters.getOrPut(storageKey) { RegexFilters() }
+    }
+
+    /**
+     * Sets regex filters for an app+profile combination.
+     */
+    fun setRegexFilters(packageName: String, profileType: ProfileType, filters: RegexFilters) {
+        val storageKey = getStorageKey(packageName, profileType)
+        regexFilters[storageKey] = filters
+        saveToPrefs()
+    }
+
+    /**
+     * Evaluates if a notification matches the configured regex filters.
+     * Returns true if the notification should be shown (passes filters).
+     *
+     * Logic:
+     * 1. If include patterns exist, notification must match at least one include pattern
+     * 2. Then, notification must NOT match any exclude pattern
+     */
+    fun matchesFilters(notification: InterceptedNotification): Boolean {
+        val filters = getRegexFilters(notification.packageName, notification.profileType)
+
+        // Combine title and text for matching
+        val content = "${notification.title ?: ""} ${notification.text ?: ""}".trim()
+
+        // Filter out blank patterns before checking
+        val validIncludePatterns = filters.includePatterns.filter { it.isNotBlank() }
+        val validExcludePatterns = filters.excludePatterns.filter { it.isNotBlank() }
+
+        // If include patterns exist, must match at least one
+        if (validIncludePatterns.isNotEmpty()) {
+            val matchesInclude = validIncludePatterns.any { pattern ->
+                try {
+                    content.contains(Regex(pattern, RegexOption.IGNORE_CASE))
+                } catch (e: Exception) {
+                    false // Invalid regex = no match
+                }
+            }
+            if (!matchesInclude) {
+                return false
+            }
+        }
+
+        // Must NOT match any exclude pattern
+        if (validExcludePatterns.isNotEmpty()) {
+            val matchesExclude = validExcludePatterns.any { pattern ->
+                try {
+                    content.contains(Regex(pattern, RegexOption.IGNORE_CASE))
+                } catch (e: Exception) {
+                    false // Invalid regex = no match
+                }
+            }
+            if (matchesExclude) {
+                return false
+            }
+        }
+
+        return true
     }
 
     /**
@@ -214,6 +304,11 @@ object NotificationStorage {
                 val mimicToSave = mimicEnabled.toMap()
                 val mimicJson = gson.toJson(mimicToSave)
                 editor.putString(KEY_MIMIC_ENABLED, mimicJson)
+
+                // Save regex filters
+                val filtersToSave = regexFilters.toMap()
+                val filtersJson = gson.toJson(filtersToSave)
+                editor.putString(KEY_REGEX_FILTERS, filtersJson)
 
                 editor.apply()
             } catch (e: Exception) {
@@ -256,11 +351,21 @@ object NotificationStorage {
                     mimicEnabled.clear()
                     mimicEnabled.putAll(loadedMimic)
                 }
+
+                // Load regex filters
+                val filtersJson = prefs.getString(KEY_REGEX_FILTERS, null)
+                if (filtersJson != null) {
+                    val type = object : TypeToken<Map<String, RegexFilters>>() {}.type
+                    val loadedFilters: Map<String, RegexFilters> = gson.fromJson(filtersJson, type)
+                    regexFilters.clear()
+                    regexFilters.putAll(loadedFilters)
+                }
             } catch (e: Exception) {
                 // If loading fails, start fresh
                 notifications.clear()
                 appIcons.clear()
                 mimicEnabled.clear()
+                regexFilters.clear()
             }
         }
     }

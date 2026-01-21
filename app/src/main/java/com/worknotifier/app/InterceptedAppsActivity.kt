@@ -9,6 +9,8 @@ import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Base64
 import android.view.LayoutInflater
@@ -26,6 +28,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.worknotifier.app.data.InterceptedNotification
 import com.worknotifier.app.data.NotificationStorage
 import com.worknotifier.app.data.ProfileType
+import com.worknotifier.app.data.RegexFilters
 
 /**
  * Activity that displays all intercepted apps and their recent notifications.
@@ -168,8 +171,17 @@ class InterceptedAppsActivity : AppCompatActivity() {
             private val llNotifications: LinearLayout = itemView.findViewById(R.id.llNotifications)
             private val btnToggleNotifications: Button = itemView.findViewById(R.id.btnToggleNotifications)
             private val btnDismissApp: Button = itemView.findViewById(R.id.btnDismissApp)
+            private val btnToggleFilters: Button = itemView.findViewById(R.id.btnToggleFilters)
+            private val llFiltersSection: LinearLayout = itemView.findViewById(R.id.llFiltersSection)
+            private val llIncludePatterns: LinearLayout = itemView.findViewById(R.id.llIncludePatterns)
+            private val llExcludePatterns: LinearLayout = itemView.findViewById(R.id.llExcludePatterns)
+            private val btnAddIncludePattern: Button = itemView.findViewById(R.id.btnAddIncludePattern)
+            private val btnAddExcludePattern: Button = itemView.findViewById(R.id.btnAddExcludePattern)
 
             private var isExpanded = true
+            private var isFiltersExpanded = false
+            private val debounceHandler = Handler(Looper.getMainLooper())
+            private val debounceDelay = 500L // milliseconds
 
             fun bind(
                 context: Context,
@@ -288,6 +300,24 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     activity.loadInterceptedApps()
                 }
 
+                // Set up filter toggle button
+                btnToggleFilters.text = if (isFiltersExpanded)
+                    context.getString(R.string.hide_filters)
+                else
+                    context.getString(R.string.show_filters)
+
+                btnToggleFilters.setOnClickListener {
+                    isFiltersExpanded = !isFiltersExpanded
+                    llFiltersSection.visibility = if (isFiltersExpanded) View.VISIBLE else View.GONE
+                    btnToggleFilters.text = if (isFiltersExpanded)
+                        context.getString(R.string.hide_filters)
+                    else
+                        context.getString(R.string.show_filters)
+                }
+
+                // Set up regex filters
+                setupRegexFilters(context, packageName, profileType, notifications)
+
                 // Clear previous notifications
                 llNotifications.removeAllViews()
                 llNotifications.visibility = if (isExpanded) View.VISIBLE else View.GONE
@@ -306,6 +336,16 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     tvTitle.text = notification.title ?: context.getString(R.string.no_title)
                     val notificationText = notification.text ?: context.getString(R.string.no_content)
                     tvTime.text = InterceptedNotification.formatTimestamp(notification.timestamp)
+
+                    // Apply visual indicator based on filter match
+                    val matchesFilters = NotificationStorage.matchesFilters(notification)
+                    if (matchesFilters) {
+                        // Matching notification - normal appearance
+                        notificationView.alpha = 1.0f
+                    } else {
+                        // Non-matching notification - grayed out
+                        notificationView.alpha = 0.35f
+                    }
 
                     // Set up dismiss notification button
                     btnDismissNotification.setOnClickListener {
@@ -347,6 +387,152 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     }
 
                     llNotifications.addView(notificationView)
+                }
+            }
+
+            /**
+             * Sets up the regex filters UI for this app.
+             */
+            private fun setupRegexFilters(
+                context: Context,
+                packageName: String,
+                profileType: ProfileType,
+                notifications: List<InterceptedNotification>
+            ) {
+                val filters = NotificationStorage.getRegexFilters(packageName, profileType)
+
+                // Clear previous filter views
+                llIncludePatterns.removeAllViews()
+                llExcludePatterns.removeAllViews()
+
+                // Populate include patterns
+                filters.includePatterns.forEach { pattern ->
+                    addFilterPatternView(context, packageName, profileType, pattern, true, notifications)
+                }
+
+                // Populate exclude patterns
+                filters.excludePatterns.forEach { pattern ->
+                    addFilterPatternView(context, packageName, profileType, pattern, false, notifications)
+                }
+
+                // Set up add pattern buttons
+                btnAddIncludePattern.setOnClickListener {
+                    val newPattern = ""
+                    filters.includePatterns.add(newPattern)
+                    NotificationStorage.setRegexFilters(packageName, profileType, filters)
+                    addFilterPatternView(context, packageName, profileType, newPattern, true, notifications)
+                }
+
+                btnAddExcludePattern.setOnClickListener {
+                    val newPattern = ""
+                    filters.excludePatterns.add(newPattern)
+                    NotificationStorage.setRegexFilters(packageName, profileType, filters)
+                    addFilterPatternView(context, packageName, profileType, newPattern, false, notifications)
+                }
+            }
+
+            /**
+             * Adds a filter pattern view (EditText with remove button).
+             */
+            private fun addFilterPatternView(
+                context: Context,
+                packageName: String,
+                profileType: ProfileType,
+                pattern: String,
+                isInclude: Boolean,
+                notifications: List<InterceptedNotification>
+            ) {
+                val patternView = LayoutInflater.from(context)
+                    .inflate(R.layout.item_filter_pattern, null, false)
+
+                val etPattern: android.widget.EditText = patternView.findViewById(R.id.etPattern)
+                val btnRemove: Button = patternView.findViewById(R.id.btnRemovePattern)
+
+                etPattern.setText(pattern)
+
+                // Save pattern when text changes (with debouncing to reduce disk writes)
+                var saveRunnable: Runnable? = null
+                etPattern.addTextChangedListener(object : android.text.TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                    override fun afterTextChanged(s: android.text.Editable?) {
+                        // Cancel previous save if still pending
+                        saveRunnable?.let { debounceHandler.removeCallbacks(it) }
+
+                        // Schedule new save after delay
+                        saveRunnable = Runnable {
+                            val filters = NotificationStorage.getRegexFilters(packageName, profileType)
+                            val index = if (isInclude) {
+                                llIncludePatterns.indexOfChild(patternView)
+                            } else {
+                                llExcludePatterns.indexOfChild(patternView)
+                            }
+
+                            if (index >= 0) {
+                                val newPattern = s.toString()
+                                if (isInclude && index < filters.includePatterns.size) {
+                                    filters.includePatterns[index] = newPattern
+                                } else if (!isInclude && index < filters.excludePatterns.size) {
+                                    filters.excludePatterns[index] = newPattern
+                                }
+                                NotificationStorage.setRegexFilters(packageName, profileType, filters)
+
+                                // Update notification visual indicators
+                                updateNotificationVisuals(notifications)
+                            }
+                        }
+                        debounceHandler.postDelayed(saveRunnable!!, debounceDelay)
+                    }
+                })
+
+                // Remove pattern
+                btnRemove.setOnClickListener {
+                    val filters = NotificationStorage.getRegexFilters(packageName, profileType)
+                    val index = if (isInclude) {
+                        llIncludePatterns.indexOfChild(patternView)
+                    } else {
+                        llExcludePatterns.indexOfChild(patternView)
+                    }
+
+                    if (index >= 0) {
+                        if (isInclude && index < filters.includePatterns.size) {
+                            filters.includePatterns.removeAt(index)
+                        } else if (!isInclude && index < filters.excludePatterns.size) {
+                            filters.excludePatterns.removeAt(index)
+                        }
+                        NotificationStorage.setRegexFilters(packageName, profileType, filters)
+
+                        if (isInclude) {
+                            llIncludePatterns.removeView(patternView)
+                        } else {
+                            llExcludePatterns.removeView(patternView)
+                        }
+
+                        // Update notification visual indicators
+                        updateNotificationVisuals(notifications)
+                    }
+                }
+
+                // Add to appropriate container
+                if (isInclude) {
+                    llIncludePatterns.addView(patternView)
+                } else {
+                    llExcludePatterns.addView(patternView)
+                }
+            }
+
+            /**
+             * Updates notification visual indicators based on filter matches.
+             */
+            private fun updateNotificationVisuals(notifications: List<InterceptedNotification>) {
+                // Update the alpha of each notification view based on filter match
+                for (i in 0 until llNotifications.childCount) {
+                    val notificationView = llNotifications.getChildAt(i)
+                    if (i < notifications.size) {
+                        val notification = notifications[i]
+                        val matchesFilters = NotificationStorage.matchesFilters(notification)
+                        notificationView.alpha = if (matchesFilters) 1.0f else 0.35f
+                    }
                 }
             }
 

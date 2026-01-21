@@ -58,9 +58,17 @@ class NotificationInterceptorService : NotificationListenerService() {
     // Track relationship between original notification keys and mimic notification IDs
     // Map<originalNotificationKey, mimicNotificationId>
     private val originalToMimic = ConcurrentHashMap<String, Int>()
-    // Map<mimicNotificationId, originalNotificationKey>
-    private val mimicToOriginal = ConcurrentHashMap<Int, String>()
+    // Map<mimicNotificationId, Set<originalNotificationKeys>>
+    private val mimicToOriginals = ConcurrentHashMap<Int, MutableSet<String>>()
+    // Track manual mimics by storage key (packageName|profileType) to prevent duplicates
+    // Map<storageKey, mimicNotificationId>
+    private val manualMimics = ConcurrentHashMap<String, Int>()
+    // Track mimics by content hash to prevent duplicate content with different keys
+    // Map<contentHash, mimicNotificationId>
+    private val contentToMimic = ConcurrentHashMap<String, Int>()
     private var nextMimicId = MIMIC_NOTIFICATION_ID_BASE
+    // Lock for synchronizing mimic creation to prevent race conditions
+    private val mimicCreationLock = Any()
 
     // Broadcast receiver to handle mimic notification actions
     private val mimicActionReceiver = object : BroadcastReceiver() {
@@ -68,18 +76,40 @@ class NotificationInterceptorService : NotificationListenerService() {
             when (intent?.action) {
                 ACTION_MIMIC_DISMISSED -> {
                     val originalKey = intent.getStringExtra(EXTRA_ORIGINAL_KEY)
-                    if (originalKey != null) {
-                        // Cancel the original notification
+                    if (originalKey != null && originalKey.isNotEmpty()) {
+                        // Cancel ALL original notifications with this content
                         try {
                             val statusBarNotifications = activeNotifications
-                            val originalNotification = statusBarNotifications.find { it.key == originalKey }
-                            if (originalNotification != null) {
-                                cancelNotification(originalKey)
-                                originalToMimic.remove(originalKey)
-                                Log.d(TAG, "Mimic dismissed, cancelling original: $originalKey")
+                            val mimicId = originalToMimic[originalKey]
+
+                            if (mimicId != null) {
+                                // Get all notification keys that map to this mimic
+                                val allKeys = mimicToOriginals[mimicId] ?: mutableSetOf()
+
+                                // Cancel all original notifications with this content
+                                allKeys.forEach { key ->
+                                    val originalNotification = statusBarNotifications.find { it.key == key }
+                                    if (originalNotification != null) {
+                                        cancelNotification(key)
+                                        originalToMimic.remove(key)
+                                        Log.d(TAG, "Cancelled original notification: $key")
+                                    }
+                                }
+
+                                // Clean up tracking
+                                mimicToOriginals.remove(mimicId)
+
+                                // Remove from content hash tracking
+                                val contentHashEntry = contentToMimic.entries.find { it.value == mimicId }
+                                if (contentHashEntry != null) {
+                                    contentToMimic.remove(contentHashEntry.key)
+                                    Log.d(TAG, "Removed content hash entry for dismissed mimic: $mimicId")
+                                }
+
+                                Log.d(TAG, "Mimic dismissed, cancelled ${allKeys.size} original notifications")
                             }
                         } catch (e: Exception) {
-                            Log.e(TAG, "Error cancelling original notification", e)
+                            Log.e(TAG, "Error cancelling original notifications", e)
                         }
                     }
                 }
@@ -99,6 +129,10 @@ class NotificationInterceptorService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         Log.d(TAG, "Notification Listener Connected")
+
+        // Clean up tracking maps to prevent memory leaks
+        // Remove entries for notifications that no longer exist
+        cleanupStaleEntries()
 
         // Create notification channel for mimic notifications
         createMimicNotificationChannel()
@@ -130,6 +164,51 @@ class NotificationInterceptorService : NotificationListenerService() {
             unregisterReceiver(mimicActionReceiver)
         } catch (e: Exception) {
             Log.e(TAG, "Error unregistering receiver", e)
+        }
+    }
+
+    /**
+     * Cleans up stale entries from tracking maps to prevent memory leaks.
+     * Removes entries for notifications and mimics that no longer exist.
+     */
+    private fun cleanupStaleEntries() {
+        try {
+            val activeKeys = activeNotifications.map { it.key }.toSet()
+            val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            val activeNotifs = notificationManager.activeNotifications.map { it.id }.toSet()
+
+            // Clean up originalToMimic - remove keys that don't exist in active notifications
+            val staleOriginalKeys = originalToMimic.keys.filter { it !in activeKeys }
+            staleOriginalKeys.forEach { key ->
+                val mimicId = originalToMimic.remove(key)
+                if (mimicId != null) {
+                    mimicToOriginals[mimicId]?.remove(key)
+                }
+            }
+
+            // Clean up mimicToOriginals - remove mimics that have no keys or don't exist
+            val staleMimicIds = mimicToOriginals.keys.filter { mimicId ->
+                mimicToOriginals[mimicId]?.isEmpty() == true || mimicId !in activeNotifs
+            }
+            staleMimicIds.forEach { mimicId ->
+                mimicToOriginals.remove(mimicId)
+
+                // Also remove from contentToMimic
+                val contentEntry = contentToMimic.entries.find { it.value == mimicId }
+                if (contentEntry != null) {
+                    contentToMimic.remove(contentEntry.key)
+                }
+            }
+
+            // Clean up manualMimics - remove if mimic doesn't exist
+            val staleManualKeys = manualMimics.entries.filter { (_, mimicId) ->
+                mimicId !in activeNotifs
+            }.map { it.key }
+            staleManualKeys.forEach { manualMimics.remove(it) }
+
+            Log.d(TAG, "Cleanup complete: removed ${staleOriginalKeys.size} original keys, ${staleMimicIds.size} mimic IDs, ${staleManualKeys.size} manual mimics")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during cleanup", e)
         }
     }
 
@@ -204,8 +283,9 @@ class NotificationInterceptorService : NotificationListenerService() {
             // Store the notification
             NotificationStorage.addNotification(interceptedNotification)
 
-            // Check if mimicking is enabled for this app+profile
-            if (NotificationStorage.isMimicEnabled(packageName, profileType)) {
+            // Check if mimicking is enabled for this app+profile AND notification passes filters
+            if (NotificationStorage.isMimicEnabled(packageName, profileType) &&
+                NotificationStorage.matchesFilters(interceptedNotification)) {
                 createMimicNotification(
                     packageName = packageName,
                     appName = appName,
@@ -237,12 +317,32 @@ class NotificationInterceptorService : NotificationListenerService() {
             // Check if this is an original notification that has a mimic
             val mimicId = originalToMimic[notificationKey]
             if (mimicId != null) {
-                // Dismiss the mimic notification
-                val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.cancel(mimicId)
+                // Remove this key from tracking
                 originalToMimic.remove(notificationKey)
-                mimicToOriginal.remove(mimicId)
-                Log.d(TAG, "Original notification removed, dismissing mimic: $mimicId")
+
+                // Get all keys still pointing to this mimic
+                val allKeys = mimicToOriginals[mimicId]
+                if (allKeys != null) {
+                    allKeys.remove(notificationKey)
+
+                    // Only dismiss the mimic if NO other notifications with this content exist
+                    if (allKeys.isEmpty()) {
+                        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+                        notificationManager.cancel(mimicId)
+                        mimicToOriginals.remove(mimicId)
+
+                        // Remove from content hash tracking
+                        val contentHashEntry = contentToMimic.entries.find { it.value == mimicId }
+                        if (contentHashEntry != null) {
+                            contentToMimic.remove(contentHashEntry.key)
+                            Log.d(TAG, "Removed content hash entry for mimic: $mimicId")
+                        }
+
+                        Log.d(TAG, "Last notification removed, dismissed mimic: $mimicId")
+                    } else {
+                        Log.d(TAG, "Notification removed but ${allKeys.size} other(s) with same content still exist, keeping mimic: $mimicId")
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error handling notification removal", e)
@@ -354,18 +454,73 @@ class NotificationInterceptorService : NotificationListenerService() {
         try {
             val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-            // Get or create a unique notification ID for this mimic
-            val mimicId = nextMimicId++
+            // Generate content hash for deduplication (packageName + profileType + title + text)
+            val contentHash = "$packageName|${profileType.name}|${NotificationStorage.getContentHash(title, text)}"
 
-            // Track the relationship between original and mimic (if we have an original key)
-            if (originalNotificationKey != null) {
-                // Cancel any existing mimic for this original notification
-                originalToMimic[originalNotificationKey]?.let { oldMimicId ->
-                    notificationManager.cancel(oldMimicId)
-                    mimicToOriginal.remove(oldMimicId)
+            // Atomically check and create mimic to prevent race conditions
+            val mimicId = synchronized(mimicCreationLock) {
+                // Check if we already have a mimic for this exact content
+                val existingMimicId = contentToMimic[contentHash]
+                if (existingMimicId != null && originalNotificationKey != null) {
+                    // Already have a mimic with this exact content
+                    // Update tracking so this notification key can also dismiss the mimic (two-way dismissal)
+                    originalToMimic[originalNotificationKey] = existingMimicId
+                    mimicToOriginals.getOrPut(existingMimicId) { mutableSetOf() }.add(originalNotificationKey)
+                    Log.d(TAG, "Reusing existing mimic $existingMimicId for duplicate content, added key: $originalNotificationKey")
+                    return
                 }
+
+                // Get or create a unique notification ID for this mimic
+                val newMimicId = nextMimicId++
+
+                // Track the mimic by content hash to prevent duplicates
+                contentToMimic[contentHash] = newMimicId
+
+                newMimicId
+            }
+
+            // Track the relationship between original and mimic
+            if (originalNotificationKey != null) {
+                // This is an automatic mimic from onNotificationPosted
+                // Cancel any existing mimic for this original notification key (should not happen with content dedup)
+                originalToMimic[originalNotificationKey]?.let { oldMimicId ->
+                    // Remove this key from the old mimic's tracking
+                    mimicToOriginals[oldMimicId]?.remove(originalNotificationKey)
+
+                    // If old mimic has no more keys, cancel it
+                    if (mimicToOriginals[oldMimicId]?.isEmpty() == true) {
+                        notificationManager.cancel(oldMimicId)
+                        mimicToOriginals.remove(oldMimicId)
+
+                        // Clean up old content hash entry
+                        val oldContentHashEntry = contentToMimic.entries.find { it.value == oldMimicId }
+                        if (oldContentHashEntry != null) {
+                            contentToMimic.remove(oldContentHashEntry.key)
+                        }
+                    }
+                }
+
+                // Add this notification to the new mimic's tracking
                 originalToMimic[originalNotificationKey] = mimicId
-                mimicToOriginal[mimicId] = originalNotificationKey
+                mimicToOriginals.getOrPut(mimicId) { mutableSetOf() }.add(originalNotificationKey)
+            } else {
+                // This is a manual mimic (triggered by checkbox)
+                // Use storage key to prevent duplicates
+                val storageKey = "$packageName|${profileType.name}"
+                manualMimics[storageKey]?.let { oldMimicId ->
+                    // Cancel existing manual mimic for this app+profile
+                    notificationManager.cancel(oldMimicId)
+
+                    // Clean up old content hash entry
+                    val oldContentHashEntry = contentToMimic.entries.find { it.value == oldMimicId }
+                    if (oldContentHashEntry != null) {
+                        contentToMimic.remove(oldContentHashEntry.key)
+                    }
+
+                    Log.d(TAG, "Cancelled previous manual mimic: $oldMimicId for $storageKey")
+                }
+                manualMimics[storageKey] = mimicId
+                Log.d(TAG, "Created manual mimic: $mimicId for $storageKey")
             }
 
             // Add profile badge to conversation title for Work/Private profiles
@@ -499,6 +654,33 @@ class NotificationInterceptorService : NotificationListenerService() {
             Log.d(TAG, "Mimic notification created with MessagingStyle: ID=$mimicId, App=$appName")
         } catch (e: Exception) {
             Log.e(TAG, "Error creating mimic notification", e)
+
+            // Cleanup: remove tracking entries for failed mimic creation
+            try {
+                val contentHash = "$packageName|${profileType.name}|${NotificationStorage.getContentHash(title, text)}"
+
+                // Remove from content hash tracking
+                contentToMimic.remove(contentHash)
+
+                // Remove from original tracking if applicable
+                if (originalNotificationKey != null) {
+                    val failedMimicId = originalToMimic.remove(originalNotificationKey)
+                    if (failedMimicId != null) {
+                        mimicToOriginals[failedMimicId]?.remove(originalNotificationKey)
+                        if (mimicToOriginals[failedMimicId]?.isEmpty() == true) {
+                            mimicToOriginals.remove(failedMimicId)
+                        }
+                    }
+                } else {
+                    // Remove from manual mimic tracking
+                    val storageKey = "$packageName|${profileType.name}"
+                    manualMimics.remove(storageKey)
+                }
+
+                Log.d(TAG, "Cleaned up tracking entries for failed mimic creation")
+            } catch (cleanupException: Exception) {
+                Log.e(TAG, "Error during cleanup after failed mimic creation", cleanupException)
+            }
         }
     }
 
