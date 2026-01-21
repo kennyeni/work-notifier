@@ -12,10 +12,8 @@ on:
     branches: [ main, master ]
 
 permissions:
-  contents: read        # Read repository contents
-  pull-requests: write  # Comment on and review PRs
-  issues: write         # Write to issues (PRs are issues)
-  checks: write         # Create/update check runs
+  contents: read   # Read repository contents
+  checks: write    # Post build status checks
 
 jobs:
   build:
