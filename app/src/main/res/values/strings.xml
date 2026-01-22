@@ -43,4 +43,11 @@
     <string name="add_exclude_pattern">+ Add Exclude Pattern</string>
     <string name="pattern_hint">Enter regex pattern</string>
     <string name="remove_pattern">Remove</string>
+
+    <!-- Android Auto Settings -->
+    <string name="android_auto_only_mode">Android Auto Only Mode</string>
+    <string name="android_auto_only_description">When enabled, mimic notifications are only generated when connected to Android Auto. Notifications are still intercepted at all times.</string>
+    <string name="android_auto_status_checking">Checking Android Auto status…</string>
+    <string name="android_auto_status_connected">Android Auto: Connected (%s)</string>
+    <string name="android_auto_status_not_connected">Android Auto: Not Connected</string>
 </resources>

@@ -9,16 +9,21 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.car.app.connection.CarConnection
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Observer
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.switchmaterial.SwitchMaterial
 import com.worknotifier.app.data.NotificationStorage
+import com.worknotifier.app.utils.AndroidAutoDetector
 
 class MainActivity : AppCompatActivity() {
 
@@ -35,8 +40,17 @@ class MainActivity : AppCompatActivity() {
         // Initialize notification storage
         NotificationStorage.init(applicationContext)
 
+        // Initialize Android Auto detector
+        AndroidAutoDetector.initialize(applicationContext)
+
         // Create notification channel
         createNotificationChannel()
+
+        // Set up Android Auto status display
+        setupAndroidAutoStatus()
+
+        // Set up Android Auto only mode toggle
+        setupAndroidAutoToggle()
 
         // Set up buttons
         findViewById<MaterialButton>(R.id.btnSendNotification).setOnClickListener {
@@ -213,5 +227,44 @@ class MainActivity : AppCompatActivity() {
             .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
             .setShowsUserInterface(false)
             .build()
+    }
+
+    private fun setupAndroidAutoStatus() {
+        val statusTextView = findViewById<TextView>(R.id.tvAndroidAutoStatus)
+
+        // Create CarConnection instance and observe its type
+        val carConnection = CarConnection(applicationContext)
+        carConnection.type.observe(this, Observer { connectionType ->
+            val statusText = when (connectionType) {
+                CarConnection.CONNECTION_TYPE_NOT_CONNECTED ->
+                    getString(R.string.android_auto_status_not_connected)
+                CarConnection.CONNECTION_TYPE_NATIVE ->
+                    getString(R.string.android_auto_status_connected, "Android Automotive OS")
+                CarConnection.CONNECTION_TYPE_PROJECTION ->
+                    getString(R.string.android_auto_status_connected, "Projection")
+                else -> getString(R.string.android_auto_status_checking)
+            }
+            statusTextView.text = statusText
+        })
+    }
+
+    private fun setupAndroidAutoToggle() {
+        val switchAndroidAuto = findViewById<SwitchMaterial>(R.id.switchAndroidAutoOnly)
+
+        // Load saved preference
+        val isEnabled = NotificationStorage.isAndroidAutoOnlyMode()
+        switchAndroidAuto.isChecked = isEnabled
+
+        // Set up listener for toggle changes
+        switchAndroidAuto.setOnCheckedChangeListener { _, isChecked ->
+            NotificationStorage.setAndroidAutoOnlyMode(isChecked)
+
+            val message = if (isChecked) {
+                "Mimic notifications will only be generated when connected to Android Auto"
+            } else {
+                "Mimic notifications will always be generated"
+            }
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        }
     }
 }

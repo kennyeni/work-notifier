@@ -28,6 +28,7 @@ object NotificationStorage {
     private const val KEY_APP_ICONS = "app_icons"
     private const val KEY_MIMIC_ENABLED = "mimic_enabled"
     private const val KEY_REGEX_FILTERS = "regex_filters"
+    private const val KEY_ANDROID_AUTO_ONLY = "android_auto_only"
 
     // Map key: "packageName|profileType"
     private val notifications = ConcurrentHashMap<String, MutableList<InterceptedNotification>>()
@@ -200,6 +201,23 @@ object NotificationStorage {
     fun isMimicEnabled(packageName: String, profileType: ProfileType): Boolean {
         val storageKey = getStorageKey(packageName, profileType)
         return mimicEnabled[storageKey] == true
+    }
+
+    /**
+     * Sets the global Android Auto only mode.
+     * When enabled, mimic notifications are only generated when connected to Android Auto.
+     * When disabled, mimic notifications are always generated (if app has mimic enabled).
+     */
+    fun setAndroidAutoOnlyMode(enabled: Boolean) {
+        sharedPrefs?.edit()?.putBoolean(KEY_ANDROID_AUTO_ONLY, enabled)?.apply()
+    }
+
+    /**
+     * Gets the global Android Auto only mode setting.
+     * Returns false by default (always generate mimics).
+     */
+    fun isAndroidAutoOnlyMode(): Boolean {
+        return sharedPrefs?.getBoolean(KEY_ANDROID_AUTO_ONLY, false) ?: false
     }
 
     /**

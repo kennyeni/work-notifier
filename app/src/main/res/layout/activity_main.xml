@@ -7,6 +7,48 @@
     android:padding="16dp"
     tools:context=".MainActivity">
 
+    <TextView
+        android:id="@+id/tvAndroidAutoStatus"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/android_auto_status_checking"
+        android:textSize="14sp"
+        android:textColor="?android:attr/textColorSecondary"
+        android:gravity="center"
+        android:padding="8dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/switchAndroidAutoOnly" />
+
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchAndroidAutoOnly"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/android_auto_only_mode"
+        android:textSize="16sp"
+        android:padding="12dp"
+        android:layout_marginTop="8dp"
+        app:layout_constraintTop_toBottomOf="@+id/tvAndroidAutoStatus"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/tvAndroidAutoOnlyDescription" />
+
+    <TextView
+        android:id="@+id/tvAndroidAutoOnlyDescription"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/android_auto_only_description"
+        android:textSize="12sp"
+        android:textColor="?android:attr/textColorSecondary"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="16dp"
+        app:layout_constraintTop_toBottomOf="@+id/switchAndroidAutoOnly"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/btnSendNotification" />
+
     <Button
         android:id="@+id/btnSendNotification"
         android:layout_width="0dp"
@@ -14,7 +56,8 @@
         android:text="@string/send_test_notification"
         android:textSize="18sp"
         android:padding="16dp"
-        app:layout_constraintTop_toTopOf="parent"
+        android:layout_marginTop="16dp"
+        app:layout_constraintTop_toBottomOf="@+id/tvAndroidAutoOnlyDescription"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintBottom_toTopOf="@+id/btnSelectApps"

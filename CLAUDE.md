@@ -33,6 +33,15 @@ The app uses `NotificationListenerService` to intercept notifications from:
 - Compatible with Android Auto
 - Reply and Mark-as-Read actions
 
+### Android Auto Only Mode
+- Global toggle to control when mimic notifications are generated
+- Real-time Android Auto connection status display
+- When enabled, mimic notifications only created when connected to Android Auto
+- When disabled, mimic notifications always generated (default behavior)
+- Uses official CarConnection API for reliable detection
+- Supports both Android Auto (projection) and Android Automotive OS (native)
+- No special permissions required for detection
+
 ## Project Structure
 
 ```
@@ -49,6 +58,7 @@ work-notifier/
 │   │   │   ├── InterceptedNotification.kt    # Data model with ProfileType enum and icon storage
 │   │   │   └── NotificationStorage.kt        # Persistent and in-memory storage
 │   │   └── utils/
+│   │       ├── AndroidAutoDetector.kt        # Android Auto detection utility
 │   │       └── RootUtils.kt                  # Optional root features
 │   └── build.gradle
 ├── build_jks.gradle          # Deterministic keystore generation
@@ -69,6 +79,7 @@ work-notifier/
 - ConstraintLayout 2.1.4
 - RecyclerView 1.3.2
 - Gson 2.10.1 (for persistent storage)
+- AndroidX Car App 1.4.0 (for Android Auto detection)
 
 ## Key Implementation Files
 
@@ -102,6 +113,28 @@ Persistent and in-memory storage with:
 - **Maximum**: 10 unique notifications per app per profile
 - **Thread-safe**: ConcurrentHashMap for concurrent access
 - **Dismiss functionality**: Remove individual notifications or entire app instances
+- **Android Auto Only Mode**: Global preference to control mimic notification generation based on Android Auto connectivity
+
+### AndroidAutoDetector.kt
+Utility for detecting Android Auto connection status.
+
+**Key Features:**
+- Uses official `CarConnection` API from androidx.car.app
+- Detects three connection types:
+  - `CONNECTION_TYPE_NOT_CONNECTED`: Not connected to any car head unit
+  - `CONNECTION_TYPE_NATIVE`: Running natively on Android Automotive OS
+  - `CONNECTION_TYPE_PROJECTION`: Connected to Android Auto (projection mode)
+- LiveData observation for real-time status updates
+- No special permissions required
+- Thread-safe singleton implementation
+
+**Key Methods:**
+- `initialize(context)`: Initialize detector (call once at app startup)
+- `isConnectedToAndroidAuto()`: Check if connected (projection or native)
+- `isProjectionMode()`: Check if connected via Android Auto projection
+- `isNativeMode()`: Check if running on Android Automotive OS
+- `getConnectionType()`: Get current connection type code
+- `getConnectionStatusString()`: Get human-readable status
 
 ### RootUtils.kt (Optional)
 If root access is available (Magisk), the app can:
@@ -157,11 +190,11 @@ The build uses deterministic keystore generation (`build_jks.gradle`) to ensure 
 
 ## Git Workflow
 
-- **Development Branch**: `claude/private-space-notifications-bUrSP`
+- **Development Branch**: `claude/android-auto-notification-toggle-CSvb3`
 - **Main Branch**: `main`
 
 ---
 
-**Last Updated**: 2026-01-21
+**Last Updated**: 2026-01-22
 **Android Version**: Android 15 (API 35)
 **Build System**: Gradle 8.2
