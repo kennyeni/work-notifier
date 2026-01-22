@@ -48,10 +48,9 @@ class NotificationInterceptorService : NotificationListenerService() {
         private const val MIMIC_CHANNEL_NAME = "Mimic Notifications"
         private const val MIMIC_NOTIFICATION_ID_BASE = 100000
         private const val ACTION_MIMIC_DISMISSED = "com.worknotifier.app.MIMIC_DISMISSED"
-        private const val ACTION_MIMIC_ACTION_PREFIX = "com.worknotifier.app.MIMIC_ACTION_"
+        private const val ACTION_MIMIC_ACTION = "com.worknotifier.app.MIMIC_ACTION"
         private const val EXTRA_ORIGINAL_KEY = "original_key"
         private const val EXTRA_ACTION_INDEX = "action_index"
-        private const val EXTRA_REPLY_TEXT = "reply_text"
     }
 
     /**
@@ -88,8 +87,8 @@ class NotificationInterceptorService : NotificationListenerService() {
     // Broadcast receiver to handle mimic notification actions
     private val mimicActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            when {
-                intent?.action == ACTION_MIMIC_DISMISSED -> {
+            when (intent?.action) {
+                ACTION_MIMIC_DISMISSED -> {
                     val originalKey = intent.getStringExtra(EXTRA_ORIGINAL_KEY)
                     if (originalKey != null && originalKey.isNotEmpty()) {
                         // Cancel ALL original notifications with this content
@@ -129,7 +128,7 @@ class NotificationInterceptorService : NotificationListenerService() {
                         }
                     }
                 }
-                intent?.action?.startsWith(ACTION_MIMIC_ACTION_PREFIX) == true -> {
+                ACTION_MIMIC_ACTION -> {
                     // Handle action bridging from mimic to original notification
                     handleMimicActionBridge(intent)
                 }
@@ -154,7 +153,7 @@ class NotificationInterceptorService : NotificationListenerService() {
         // Register broadcast receiver for mimic actions
         val filter = IntentFilter().apply {
             addAction(ACTION_MIMIC_DISMISSED)
-            // Dynamic actions are handled by prefix matching in receiver
+            addAction(ACTION_MIMIC_ACTION)
         }
         registerReceiver(mimicActionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
 
@@ -733,7 +732,7 @@ class NotificationInterceptorService : NotificationListenerService() {
 
             // Create mimic actions that bridge to original notification actions (1:1 mapping)
             originalActions.forEachIndexed { index, actionInfo ->
-                val actionIntent = Intent("${ACTION_MIMIC_ACTION_PREFIX}$index").apply {
+                val actionIntent = Intent(ACTION_MIMIC_ACTION).apply {
                     setPackage(applicationContext.packageName)
                     putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
                     putExtra(EXTRA_ACTION_INDEX, index)
@@ -780,10 +779,11 @@ class NotificationInterceptorService : NotificationListenerService() {
 
             // If no original actions, add default Reply and Mark as Read actions (for manual mimics)
             if (originalActions.isEmpty()) {
-                // Create default Reply action
-                val replyIntent = Intent("${ACTION_MIMIC_ACTION_PREFIX}reply_default").apply {
+                // Create default Reply action (index -1 indicates no original action to bridge)
+                val replyIntent = Intent(ACTION_MIMIC_ACTION).apply {
                     setPackage(applicationContext.packageName)
                     putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
+                    putExtra(EXTRA_ACTION_INDEX, -1) // No original action to bridge
                 }
                 val replyPendingIntent = PendingIntent.getBroadcast(
                     this,
@@ -804,10 +804,11 @@ class NotificationInterceptorService : NotificationListenerService() {
                     .setShowsUserInterface(false)
                     .build()
 
-                // Create default Mark as Read action
-                val markReadIntent = Intent("${ACTION_MIMIC_ACTION_PREFIX}mark_read_default").apply {
+                // Create default Mark as Read action (index -2 indicates no original action to bridge)
+                val markReadIntent = Intent(ACTION_MIMIC_ACTION).apply {
                     setPackage(applicationContext.packageName)
                     putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
+                    putExtra(EXTRA_ACTION_INDEX, -2) // No original action to bridge
                 }
                 val markReadPendingIntent = PendingIntent.getBroadcast(
                     this,
