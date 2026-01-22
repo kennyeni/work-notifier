@@ -47,11 +47,20 @@ class NotificationInterceptorService : NotificationListenerService() {
         private const val MIMIC_CHANNEL_NAME = "Mimic Notifications"
         private const val MIMIC_NOTIFICATION_ID_BASE = 100000
         private const val ACTION_MIMIC_DISMISSED = "com.worknotifier.app.MIMIC_DISMISSED"
-        private const val ACTION_MIMIC_REPLY = "com.worknotifier.app.MIMIC_REPLY"
-        private const val ACTION_MIMIC_MARK_READ = "com.worknotifier.app.MIMIC_MARK_READ"
+        private const val ACTION_MIMIC_ACTION_PREFIX = "com.worknotifier.app.MIMIC_ACTION_"
         private const val EXTRA_ORIGINAL_KEY = "original_key"
-        private const val REMOTE_INPUT_KEY = "remote_input_key"
+        private const val EXTRA_ACTION_INDEX = "action_index"
+        private const val EXTRA_REPLY_TEXT = "reply_text"
     }
+
+    /**
+     * Data class to store original notification action information for bridging.
+     */
+    private data class OriginalActionInfo(
+        val pendingIntent: PendingIntent,
+        val remoteInputs: Array<RemoteInput>?,
+        val semanticAction: Int
+    )
 
     private var isRooted: Boolean = false
     private var userProfileInfo: Map<Int, String> = emptyMap()
@@ -67,6 +76,9 @@ class NotificationInterceptorService : NotificationListenerService() {
     // Track mimics by content hash to prevent duplicate content with different keys
     // Map<contentHash, mimicNotificationId>
     private val contentToMimic = ConcurrentHashMap<String, Int>()
+    // Track original notification actions for bridging
+    // Map<mimicNotificationId, List<OriginalActionInfo>>
+    private val mimicToOriginalActions = ConcurrentHashMap<Int, List<OriginalActionInfo>>()
     private var nextMimicId = MIMIC_NOTIFICATION_ID_BASE
     // Lock for synchronizing mimic creation to prevent race conditions
     private val mimicCreationLock = Any()
@@ -74,8 +86,8 @@ class NotificationInterceptorService : NotificationListenerService() {
     // Broadcast receiver to handle mimic notification actions
     private val mimicActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                ACTION_MIMIC_DISMISSED -> {
+            when {
+                intent?.action == ACTION_MIMIC_DISMISSED -> {
                     val originalKey = intent.getStringExtra(EXTRA_ORIGINAL_KEY)
                     if (originalKey != null && originalKey.isNotEmpty()) {
                         // Cancel ALL original notifications with this content
@@ -99,6 +111,7 @@ class NotificationInterceptorService : NotificationListenerService() {
 
                                 // Clean up tracking
                                 mimicToOriginals.remove(mimicId)
+                                mimicToOriginalActions.remove(mimicId)
 
                                 // Remove from content hash tracking
                                 val contentHashEntry = contentToMimic.entries.find { it.value == mimicId }
@@ -114,14 +127,9 @@ class NotificationInterceptorService : NotificationListenerService() {
                         }
                     }
                 }
-                ACTION_MIMIC_REPLY -> {
-                    // Reply action does nothing as per requirements
-                    val replyText = RemoteInput.getResultsFromIntent(intent)?.getString(REMOTE_INPUT_KEY)
-                    Log.d(TAG, "Mimic reply action (does nothing): $replyText")
-                }
-                ACTION_MIMIC_MARK_READ -> {
-                    // Mark as read action does nothing as per requirements
-                    Log.d(TAG, "Mimic mark as read action (does nothing)")
+                intent?.action?.startsWith(ACTION_MIMIC_ACTION_PREFIX) == true -> {
+                    // Handle action bridging from mimic to original notification
+                    handleMimicActionBridge(intent)
                 }
             }
         }
@@ -144,8 +152,7 @@ class NotificationInterceptorService : NotificationListenerService() {
         // Register broadcast receiver for mimic actions
         val filter = IntentFilter().apply {
             addAction(ACTION_MIMIC_DISMISSED)
-            addAction(ACTION_MIMIC_REPLY)
-            addAction(ACTION_MIMIC_MARK_READ)
+            // Dynamic actions are handled by prefix matching in receiver
         }
         registerReceiver(mimicActionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
 
@@ -168,6 +175,72 @@ class NotificationInterceptorService : NotificationListenerService() {
             unregisterReceiver(mimicActionReceiver)
         } catch (e: Exception) {
             Log.e(TAG, "Error unregistering receiver", e)
+        }
+    }
+
+    /**
+     * Handles action bridging from mimic notification to original notification.
+     * Extracts the reply text (if any) and triggers the original notification's action.
+     */
+    private fun handleMimicActionBridge(intent: Intent) {
+        try {
+            val originalKey = intent.getStringExtra(EXTRA_ORIGINAL_KEY)
+            val actionIndex = intent.getIntExtra(EXTRA_ACTION_INDEX, -1)
+
+            if (originalKey.isNullOrEmpty() || actionIndex < 0) {
+                Log.e(TAG, "Invalid action bridge data: key=$originalKey, index=$actionIndex")
+                return
+            }
+
+            // Get the mimic ID from the original key
+            val mimicId = originalToMimic[originalKey]
+            if (mimicId == null) {
+                Log.e(TAG, "No mimic found for original key: $originalKey")
+                return
+            }
+
+            // Get the stored original action info
+            val originalActions = mimicToOriginalActions[mimicId]
+            if (originalActions == null || actionIndex >= originalActions.size) {
+                Log.e(TAG, "No action info found for mimic: $mimicId, index: $actionIndex")
+                return
+            }
+
+            val actionInfo = originalActions[actionIndex]
+
+            // Check if this is a reply action (has RemoteInput)
+            if (actionInfo.remoteInputs != null && actionInfo.remoteInputs.isNotEmpty()) {
+                // Extract reply text from the mimic's RemoteInput
+                val replyText = RemoteInput.getResultsFromIntent(intent)
+                if (replyText != null) {
+                    // Get the first RemoteInput key from the original action
+                    val remoteInputKey = actionInfo.remoteInputs[0].resultKey
+
+                    // Create a new intent with the reply text using the original's RemoteInput key
+                    val replyIntent = Intent()
+                    val results = Bundle()
+                    results.putCharSequence(remoteInputKey, replyText.getCharSequence(remoteInputKey))
+                    RemoteInput.addResultsToIntent(actionInfo.remoteInputs, replyIntent, results)
+
+                    // Trigger the original notification's reply action
+                    actionInfo.pendingIntent.send(applicationContext, 0, replyIntent)
+                    Log.d(TAG, "Bridged reply action: text='${replyText.getCharSequence(remoteInputKey)}' to original notification")
+                } else {
+                    Log.w(TAG, "No reply text found in mimic action")
+                }
+            } else {
+                // Simple action without RemoteInput (e.g., DELETE, ARCHIVE, MARK_AS_READ)
+                // Just trigger the original action directly
+                actionInfo.pendingIntent.send(applicationContext, 0, null)
+                Log.d(TAG, "Bridged simple action (semantic: ${actionInfo.semanticAction}) to original notification")
+            }
+
+            // Cancel the mimic notification after action is triggered
+            val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.cancel(mimicId)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error bridging mimic action to original", e)
         }
     }
 
@@ -196,6 +269,7 @@ class NotificationInterceptorService : NotificationListenerService() {
             }
             staleMimicIds.forEach { mimicId ->
                 mimicToOriginals.remove(mimicId)
+                mimicToOriginalActions.remove(mimicId)
 
                 // Also remove from contentToMimic
                 val contentEntry = contentToMimic.entries.find { it.value == mimicId }
@@ -344,6 +418,7 @@ class NotificationInterceptorService : NotificationListenerService() {
                         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
                         notificationManager.cancel(mimicId)
                         mimicToOriginals.remove(mimicId)
+                        mimicToOriginalActions.remove(mimicId)
 
                         // Remove from content hash tracking
                         val contentHashEntry = contentToMimic.entries.find { it.value == mimicId }
@@ -526,6 +601,7 @@ class NotificationInterceptorService : NotificationListenerService() {
                     if (mimicToOriginals[oldMimicId]?.isEmpty() == true) {
                         notificationManager.cancel(oldMimicId)
                         mimicToOriginals.remove(oldMimicId)
+                        mimicToOriginalActions.remove(oldMimicId)
 
                         // Clean up old content hash entry
                         val oldContentHashEntry = contentToMimic.entries.find { it.value == oldMimicId }
@@ -545,6 +621,7 @@ class NotificationInterceptorService : NotificationListenerService() {
                 manualMimics[storageKey]?.let { oldMimicId ->
                     // Cancel existing manual mimic for this app+profile
                     notificationManager.cancel(oldMimicId)
+                    mimicToOriginalActions.remove(oldMimicId)
 
                     // Clean up old content hash entry
                     val oldContentHashEntry = contentToMimic.entries.find { it.value == oldMimicId }
@@ -582,6 +659,27 @@ class NotificationInterceptorService : NotificationListenerService() {
                 .setName("You")
                 .build()
 
+            // Extract actions from original notification for bridging
+            val originalActions = originalNotification?.actions?.mapNotNull { action ->
+                action?.let {
+                    OriginalActionInfo(
+                        pendingIntent = it.actionIntent,
+                        remoteInputs = it.remoteInputs,
+                        semanticAction = it.semanticAction
+                    )
+                }
+            } ?: emptyList()
+
+            // Store original actions for bridging
+            if (originalActions.isNotEmpty()) {
+                mimicToOriginalActions[mimicId] = originalActions
+            }
+
+            // Check if original notification has a reply action
+            val hasReplyAction = originalActions.any {
+                it.remoteInputs != null && it.remoteInputs.isNotEmpty()
+            }
+
             // Try to extract existing MessagingStyle from original notification
             val originalMessagingStyle = originalNotification?.let { notif ->
                 try {
@@ -591,12 +689,23 @@ class NotificationInterceptorService : NotificationListenerService() {
                 }
             }
 
+            // Create capability indicator message (added at the end)
+            val capabilityIndicator = if (hasReplyAction) {
+                "ℹ️ You can reply to this"
+            } else {
+                "ℹ️ Reply not available"
+            }
+
             // Create or recreate MessagingStyle for Android Auto compatibility
             val messagingStyle = if (originalMessagingStyle != null) {
-                // Use original MessagingStyle if available
-                originalMessagingStyle
+                // Use original MessagingStyle if available and add capability indicator
+                originalMessagingStyle.addMessage(
+                    capabilityIndicator,
+                    System.currentTimeMillis(),
+                    deviceUser
+                )
             } else {
-                // Create new MessagingStyle with the message
+                // Create new MessagingStyle with the message and capability indicator
                 NotificationCompat.MessagingStyle(deviceUser)
                     .setConversationTitle("$senderName$profileBadge")
                     .addMessage(
@@ -604,51 +713,12 @@ class NotificationInterceptorService : NotificationListenerService() {
                         System.currentTimeMillis(),
                         senderPerson
                     )
+                    .addMessage(
+                        capabilityIndicator,
+                        System.currentTimeMillis() + 1,
+                        deviceUser
+                    )
             }
-
-            // Create Reply action (required for Android Auto)
-            val replyIntent = Intent(ACTION_MIMIC_REPLY).apply {
-                setPackage(applicationContext.packageName)
-                putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
-            }
-            val replyPendingIntent = PendingIntent.getBroadcast(
-                this,
-                mimicId,
-                replyIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-            )
-            val remoteInput = RemoteInput.Builder(REMOTE_INPUT_KEY)
-                .setLabel("Reply")
-                .build()
-            val replyAction = NotificationCompat.Action.Builder(
-                R.drawable.ic_reply,
-                "Reply",
-                replyPendingIntent
-            )
-                .addRemoteInput(remoteInput)
-                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
-                .setShowsUserInterface(false)
-                .build()
-
-            // Create Mark as Read action (required for Android Auto)
-            val markReadIntent = Intent(ACTION_MIMIC_MARK_READ).apply {
-                setPackage(applicationContext.packageName)
-                putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
-            }
-            val markReadPendingIntent = PendingIntent.getBroadcast(
-                this,
-                mimicId + 1,
-                markReadIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            val markReadAction = NotificationCompat.Action.Builder(
-                R.drawable.ic_mark_read,
-                "Mark as Read",
-                markReadPendingIntent
-            )
-                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
-                .setShowsUserInterface(false)
-                .build()
 
             // Create the notification builder with MessagingStyle
             val builder = NotificationCompat.Builder(this, MIMIC_CHANNEL_ID)
@@ -656,10 +726,105 @@ class NotificationInterceptorService : NotificationListenerService() {
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .addAction(replyAction)
-                .addAction(markReadAction)
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
+
+            // Create mimic actions that bridge to original notification actions (1:1 mapping)
+            originalActions.forEachIndexed { index, actionInfo ->
+                val actionIntent = Intent("${ACTION_MIMIC_ACTION_PREFIX}$index").apply {
+                    setPackage(applicationContext.packageName)
+                    putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
+                    putExtra(EXTRA_ACTION_INDEX, index)
+                }
+
+                // Determine if action needs mutable flag (for RemoteInput)
+                val flags = if (actionInfo.remoteInputs != null && actionInfo.remoteInputs.isNotEmpty()) {
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                } else {
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                }
+
+                val actionPendingIntent = PendingIntent.getBroadcast(
+                    this,
+                    mimicId + index,
+                    actionIntent,
+                    flags
+                )
+
+                // Get action label and icon based on semantic action
+                val (label, icon) = getActionLabelAndIcon(actionInfo.semanticAction)
+
+                val actionBuilder = NotificationCompat.Action.Builder(
+                    icon,
+                    label,
+                    actionPendingIntent
+                )
+                    .setSemanticAction(actionInfo.semanticAction)
+                    .setShowsUserInterface(false)
+
+                // If original action has RemoteInput, add it to the mimic action
+                if (actionInfo.remoteInputs != null && actionInfo.remoteInputs.isNotEmpty()) {
+                    actionInfo.remoteInputs.forEach { remoteInput ->
+                        // Create a new RemoteInput with the same key and label
+                        val mimicRemoteInput = RemoteInput.Builder(remoteInput.resultKey)
+                            .setLabel(remoteInput.label ?: "Reply")
+                            .build()
+                        actionBuilder.addRemoteInput(mimicRemoteInput)
+                    }
+                }
+
+                builder.addAction(actionBuilder.build())
+            }
+
+            // If no original actions, add default Reply and Mark as Read actions (for manual mimics)
+            if (originalActions.isEmpty()) {
+                // Create default Reply action
+                val replyIntent = Intent("${ACTION_MIMIC_ACTION_PREFIX}reply_default").apply {
+                    setPackage(applicationContext.packageName)
+                    putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
+                }
+                val replyPendingIntent = PendingIntent.getBroadcast(
+                    this,
+                    mimicId,
+                    replyIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                )
+                val remoteInput = RemoteInput.Builder("reply_key")
+                    .setLabel("Reply")
+                    .build()
+                val replyAction = NotificationCompat.Action.Builder(
+                    R.drawable.ic_reply,
+                    "Reply",
+                    replyPendingIntent
+                )
+                    .addRemoteInput(remoteInput)
+                    .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+                    .setShowsUserInterface(false)
+                    .build()
+
+                // Create default Mark as Read action
+                val markReadIntent = Intent("${ACTION_MIMIC_ACTION_PREFIX}mark_read_default").apply {
+                    setPackage(applicationContext.packageName)
+                    putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
+                }
+                val markReadPendingIntent = PendingIntent.getBroadcast(
+                    this,
+                    mimicId + 1,
+                    markReadIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val markReadAction = NotificationCompat.Action.Builder(
+                    R.drawable.ic_mark_read,
+                    "Mark as Read",
+                    markReadPendingIntent
+                )
+                    .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+                    .setShowsUserInterface(false)
+                    .build()
+
+                builder.addAction(replyAction)
+                builder.addAction(markReadAction)
+            }
 
             // Set app icon as large icon if available
             appIconBase64?.let { iconBase64 ->
@@ -704,12 +869,16 @@ class NotificationInterceptorService : NotificationListenerService() {
                         mimicToOriginals[failedMimicId]?.remove(originalNotificationKey)
                         if (mimicToOriginals[failedMimicId]?.isEmpty() == true) {
                             mimicToOriginals.remove(failedMimicId)
+                            mimicToOriginalActions.remove(failedMimicId)
                         }
                     }
                 } else {
                     // Remove from manual mimic tracking
                     val storageKey = "$packageName|${profileType.name}"
-                    manualMimics.remove(storageKey)
+                    val failedMimicId = manualMimics.remove(storageKey)
+                    if (failedMimicId != null) {
+                        mimicToOriginalActions.remove(failedMimicId)
+                    }
                 }
 
                 Log.d(TAG, "Cleaned up tracking entries for failed mimic creation")
@@ -733,6 +902,26 @@ class NotificationInterceptorService : NotificationListenerService() {
         } catch (e: Exception) {
             Log.e(TAG, "Error decoding Base64 to Bitmap", e)
             null
+        }
+    }
+
+    /**
+     * Gets the action label and icon resource based on semantic action type.
+     * Returns a Pair of (label, iconResourceId).
+     */
+    private fun getActionLabelAndIcon(semanticAction: Int): Pair<String, Int> {
+        return when (semanticAction) {
+            NotificationCompat.Action.SEMANTIC_ACTION_REPLY -> Pair("Reply", R.drawable.ic_reply)
+            NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ -> Pair("Mark as Read", R.drawable.ic_mark_read)
+            NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_UNREAD -> Pair("Mark Unread", R.drawable.ic_mark_read)
+            NotificationCompat.Action.SEMANTIC_ACTION_DELETE -> Pair("Delete", R.drawable.ic_mark_read)
+            NotificationCompat.Action.SEMANTIC_ACTION_ARCHIVE -> Pair("Archive", R.drawable.ic_mark_read)
+            NotificationCompat.Action.SEMANTIC_ACTION_MUTE -> Pair("Mute", R.drawable.ic_mark_read)
+            NotificationCompat.Action.SEMANTIC_ACTION_UNMUTE -> Pair("Unmute", R.drawable.ic_mark_read)
+            NotificationCompat.Action.SEMANTIC_ACTION_THUMBS_UP -> Pair("Like", R.drawable.ic_mark_read)
+            NotificationCompat.Action.SEMANTIC_ACTION_THUMBS_DOWN -> Pair("Dislike", R.drawable.ic_mark_read)
+            NotificationCompat.Action.SEMANTIC_ACTION_CALL -> Pair("Call", R.drawable.ic_mark_read)
+            else -> Pair("Action", R.drawable.ic_mark_read)
         }
     }
 
