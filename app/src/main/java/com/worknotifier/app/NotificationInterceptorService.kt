@@ -182,14 +182,31 @@ class NotificationInterceptorService : NotificationListenerService() {
     /**
      * Handles action bridging from mimic notification to original notification.
      * Extracts the reply text (if any) and triggers the original notification's action.
+     * For manual mimics (negative actionIndex), simply dismisses the mimic without bridging.
      */
     private fun handleMimicActionBridge(intent: Intent) {
         try {
             val originalKey = intent.getStringExtra(EXTRA_ORIGINAL_KEY)
-            val actionIndex = intent.getIntExtra(EXTRA_ACTION_INDEX, -1)
+            val actionIndex = intent.getIntExtra(EXTRA_ACTION_INDEX, -999)
 
-            if (originalKey.isNullOrEmpty() || actionIndex < 0) {
-                Log.e(TAG, "Invalid action bridge data: key=$originalKey, index=$actionIndex")
+            // Handle manual mimic actions (negative index = no original notification to bridge)
+            if (actionIndex < 0) {
+                Log.d(TAG, "Manual mimic action (no original to bridge), actionIndex=$actionIndex")
+                // For manual mimics, there's no original notification to forward the action to
+                // Just dismiss the mimic notification since user interacted with it
+                // The mimic ID can be found from the originalKey if it's not empty
+                if (!originalKey.isNullOrEmpty()) {
+                    originalToMimic[originalKey]?.let { mimicId ->
+                        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+                        notificationManager.cancel(mimicId)
+                        Log.d(TAG, "Dismissed manual mimic: $mimicId")
+                    }
+                }
+                return
+            }
+
+            if (originalKey.isNullOrEmpty()) {
+                Log.e(TAG, "Invalid action bridge data: originalKey is null/empty")
                 return
             }
 
