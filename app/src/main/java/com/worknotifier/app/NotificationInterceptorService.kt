@@ -24,8 +24,9 @@ import android.util.Base64
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
-import androidx.core.app.RemoteInput
+import androidx.core.app.RemoteInput as AndroidXRemoteInput
 import androidx.core.graphics.drawable.IconCompat
+import android.app.RemoteInput
 import com.worknotifier.app.data.InterceptedNotification
 import com.worknotifier.app.data.NotificationStorage
 import com.worknotifier.app.data.ProfileType
@@ -55,10 +56,11 @@ class NotificationInterceptorService : NotificationListenerService() {
 
     /**
      * Data class to store original notification action information for bridging.
+     * Uses android.app.RemoteInput since that's what original notifications provide.
      */
     private data class OriginalActionInfo(
         val pendingIntent: PendingIntent,
-        val remoteInputs: Array<RemoteInput>?,
+        val remoteInputs: Array<android.app.RemoteInput>?,
         val semanticAction: Int
     )
 
@@ -210,8 +212,8 @@ class NotificationInterceptorService : NotificationListenerService() {
 
             // Check if this is a reply action (has RemoteInput)
             if (actionInfo.remoteInputs != null && actionInfo.remoteInputs.isNotEmpty()) {
-                // Extract reply text from the mimic's RemoteInput
-                val replyText = RemoteInput.getResultsFromIntent(intent)
+                // Extract reply text from the mimic's RemoteInput (AndroidX)
+                val replyText = AndroidXRemoteInput.getResultsFromIntent(intent)
                 if (replyText != null) {
                     // Get the first RemoteInput key from the original action
                     val remoteInputKey = actionInfo.remoteInputs[0].resultKey
@@ -220,7 +222,7 @@ class NotificationInterceptorService : NotificationListenerService() {
                     val replyIntent = Intent()
                     val results = Bundle()
                     results.putCharSequence(remoteInputKey, replyText.getCharSequence(remoteInputKey))
-                    RemoteInput.addResultsToIntent(actionInfo.remoteInputs, replyIntent, results)
+                    android.app.RemoteInput.addResultsToIntent(actionInfo.remoteInputs, replyIntent, results)
 
                     // Trigger the original notification's reply action
                     actionInfo.pendingIntent.send(applicationContext, 0, replyIntent)
@@ -765,8 +767,8 @@ class NotificationInterceptorService : NotificationListenerService() {
                 // If original action has RemoteInput, add it to the mimic action
                 if (actionInfo.remoteInputs != null && actionInfo.remoteInputs.isNotEmpty()) {
                     actionInfo.remoteInputs.forEach { remoteInput ->
-                        // Create a new RemoteInput with the same key and label
-                        val mimicRemoteInput = RemoteInput.Builder(remoteInput.resultKey)
+                        // Create a new AndroidX RemoteInput with the same key and label from original
+                        val mimicRemoteInput = AndroidXRemoteInput.Builder(remoteInput.resultKey)
                             .setLabel(remoteInput.label ?: "Reply")
                             .build()
                         actionBuilder.addRemoteInput(mimicRemoteInput)
@@ -789,7 +791,7 @@ class NotificationInterceptorService : NotificationListenerService() {
                     replyIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
                 )
-                val remoteInput = RemoteInput.Builder("reply_key")
+                val remoteInput = AndroidXRemoteInput.Builder("reply_key")
                     .setLabel("Reply")
                     .build()
                 val replyAction = NotificationCompat.Action.Builder(
