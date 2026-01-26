@@ -134,6 +134,19 @@
                 android:layout_marginStart="8dp"
                 android:textColor="@color/error" />
 
+            <Button
+                android:id="@+id/btnDisableApp"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/disable_app"
+                android:textSize="12sp"
+                android:minHeight="0dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:layout_marginStart="8dp"
+                android:textColor="@color/error" />
+
         </LinearLayout>
 
         <!-- Regex Filters Section (Collapsible) -->

@@ -14,6 +14,8 @@ import android.os.Looper
 import android.provider.Settings
 import android.util.Base64
 import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -82,6 +84,22 @@ class InterceptedAppsActivity : AppCompatActivity() {
     override fun onSupportNavigateUp(): Boolean {
         finish()
         return true
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.intercepted_apps_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_manage_disabled_apps -> {
+                val intent = Intent(this, DisabledAppsActivity::class.java)
+                startActivity(intent)
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
     }
 
     /**
@@ -171,6 +189,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
             private val llNotifications: LinearLayout = itemView.findViewById(R.id.llNotifications)
             private val btnToggleNotifications: Button = itemView.findViewById(R.id.btnToggleNotifications)
             private val btnDismissApp: Button = itemView.findViewById(R.id.btnDismissApp)
+            private val btnDisableApp: Button = itemView.findViewById(R.id.btnDisableApp)
             private val btnToggleFilters: Button = itemView.findViewById(R.id.btnToggleFilters)
             private val llFiltersSection: LinearLayout = itemView.findViewById(R.id.llFiltersSection)
             private val llIncludePatterns: LinearLayout = itemView.findViewById(R.id.llIncludePatterns)
@@ -180,8 +199,10 @@ class InterceptedAppsActivity : AppCompatActivity() {
 
             private var isExpanded = true
             private var isFiltersExpanded = false
+            private var visibleNotificationCount = 10 // Show 10 notifications initially
             private val debounceHandler = Handler(Looper.getMainLooper())
             private val debounceDelay = 500L // milliseconds
+            private val notificationsPerPage = 10
 
             fun bind(
                 context: Context,
@@ -300,6 +321,12 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     activity.loadInterceptedApps()
                 }
 
+                // Set up disable app button
+                btnDisableApp.setOnClickListener {
+                    NotificationStorage.disableApp(packageName, profileType)
+                    activity.loadInterceptedApps()
+                }
+
                 // Set up filter toggle button
                 btnToggleFilters.text = if (isFiltersExpanded)
                     context.getString(R.string.hide_filters)
@@ -322,8 +349,12 @@ class InterceptedAppsActivity : AppCompatActivity() {
                 llNotifications.removeAllViews()
                 llNotifications.visibility = if (isExpanded) View.VISIBLE else View.GONE
 
-                // Add notification items
-                notifications.forEach { notification ->
+                // Reset visible count when binding new data
+                visibleNotificationCount = notificationsPerPage
+
+                // Add notification items (paginated)
+                val notificationsToShow = notifications.take(visibleNotificationCount)
+                notificationsToShow.forEach { notification ->
                     val notificationView = LayoutInflater.from(context)
                         .inflate(R.layout.item_notification, llNotifications, false)
 
@@ -387,6 +418,18 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     }
 
                     llNotifications.addView(notificationView)
+                }
+
+                // Add "Load More" button if there are more notifications to show
+                if (notifications.size > visibleNotificationCount) {
+                    val loadMoreButton = Button(context)
+                    loadMoreButton.text = context.getString(R.string.load_more)
+                    loadMoreButton.setOnClickListener {
+                        visibleNotificationCount += notificationsPerPage
+                        // Rebind to refresh the notification list with more items
+                        bind(context, activity, storageKey, notifications)
+                    }
+                    llNotifications.addView(loadMoreButton)
                 }
             }
 
