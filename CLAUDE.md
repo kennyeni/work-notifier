@@ -21,10 +21,13 @@ The app uses `NotificationListenerService` to intercept notifications from:
 - Dark theme optimized interface
 - App icons and names (cross-profile icon support - Work/Private app icons displayed correctly)
 - Profile badges (orange "WORK", purple "PRIVATE") - now shows per profile instance
-- Last 10 notifications per app per profile (unique, deduplicated)
+- Last 100 notifications per app per profile (unique, deduplicated)
+- Pagination: Display 10 notifications at a time with "Load More" button
+- App ordering: Enabled apps first (mimic enabled), then alphabetically sorted
 - Expand/collapse for long notification text
 - Collapse/expand notifications per app to reduce clutter
 - Dismiss individual notifications or entire apps from history
+- Disable apps: Permanently hide apps from list via hamburger menu
 - Deduplication by notification key with improved validation
 - Persistent notification history (survives app restart)
 
@@ -110,9 +113,12 @@ Persistent and in-memory storage with:
 - **Composite key**: Stores apps by "packageName|profileType" to differentiate same app across profiles
 - **Deduplication**: Enhanced validation - removes duplicates by notification key and rejects invalid entries
 - **Persistence**: Saves to SharedPreferences using Gson serialization, survives app restarts
-- **Maximum**: 10 unique notifications per app per profile
+- **Maximum**: 100 unique notifications per app per profile
+- **Pagination**: UI displays 10 notifications at a time with "Load More" button
+- **Sorting**: Apps sorted by enabled status (mimic enabled first), then alphabetically
 - **Thread-safe**: ConcurrentHashMap for concurrent access
 - **Dismiss functionality**: Remove individual notifications or entire app instances
+- **Disable functionality**: Permanently hide apps from list (accessible via hamburger menu)
 - **Android Auto Only Mode**: Global preference to control mimic notification generation based on Android Auto connectivity
 
 ### AndroidAutoDetector.kt

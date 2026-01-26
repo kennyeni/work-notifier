@@ -349,9 +349,6 @@ class InterceptedAppsActivity : AppCompatActivity() {
                 llNotifications.removeAllViews()
                 llNotifications.visibility = if (isExpanded) View.VISIBLE else View.GONE
 
-                // Reset visible count when binding new data
-                visibleNotificationCount = notificationsPerPage
-
                 // Add notification items (paginated)
                 val notificationsToShow = notifications.take(visibleNotificationCount)
                 notificationsToShow.forEach { notification ->
