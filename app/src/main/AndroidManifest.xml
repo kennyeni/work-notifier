@@ -57,6 +57,17 @@
                 android:name="android.support.PARENT_ACTIVITY"
                 android:value=".MainActivity" />
         </activity>
+
+        <!-- Activity to manage disabled apps -->
+        <activity
+            android:name=".DisabledAppsActivity"
+            android:exported="false"
+            android:label="@string/disabled_apps_title"
+            android:parentActivityName=".InterceptedAppsActivity">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".InterceptedAppsActivity" />
+        </activity>
     </application>
 
 </manifest>

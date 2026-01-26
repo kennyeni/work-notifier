@@ -18,17 +18,18 @@ data class RegexFilters(
 
 /**
  * Singleton to store intercepted notifications in memory and persistently.
- * Keeps the last 10 notifications per app per profile.
+ * Keeps the last 100 notifications per app per profile.
  */
 object NotificationStorage {
 
-    private const val MAX_NOTIFICATIONS_PER_APP = 10
+    private const val MAX_NOTIFICATIONS_PER_APP = 100
     private const val PREFS_NAME = "notification_storage"
     private const val KEY_NOTIFICATIONS = "notifications"
     private const val KEY_APP_ICONS = "app_icons"
     private const val KEY_MIMIC_ENABLED = "mimic_enabled"
     private const val KEY_REGEX_FILTERS = "regex_filters"
     private const val KEY_ANDROID_AUTO_ONLY = "android_auto_only"
+    private const val KEY_DISABLED_APPS = "disabled_apps"
 
     // Map key: "packageName|profileType"
     private val notifications = ConcurrentHashMap<String, MutableList<InterceptedNotification>>()
@@ -38,6 +39,8 @@ object NotificationStorage {
     private val mimicEnabled = ConcurrentHashMap<String, Boolean>()
     // Regex filters for each app+profile combination
     private val regexFilters = ConcurrentHashMap<String, RegexFilters>()
+    // Track disabled apps (won't show in list)
+    private val disabledApps = ConcurrentHashMap<String, Boolean>()
     private val gson = Gson()
     private var sharedPrefs: SharedPreferences? = null
 
@@ -109,17 +112,31 @@ object NotificationStorage {
     }
 
     /**
-     * Gets all apps that have sent notifications, sorted by most recent.
+     * Gets all apps that have sent notifications, filtered by disabled status and sorted.
      * Returns a list of (storageKey, notificationList) pairs where storageKey is "packageName|profileType".
+     *
+     * Sorting:
+     * 1. Enabled apps first (mimic enabled), then disabled (mimic disabled)
+     * 2. Within each group, sort alphabetically by app name
      */
     fun getAppsWithNotifications(): List<Pair<String, List<InterceptedNotification>>> {
         return notifications.entries
+            .filter { (storageKey, _) ->
+                // Filter out disabled apps
+                disabledApps[storageKey] != true
+            }
             .map { (storageKey, notificationList) ->
                 storageKey to notificationList.toList()
             }
-            .sortedByDescending { (_, notificationList) ->
-                notificationList.firstOrNull()?.timestamp ?: 0L
-            }
+            .sortedWith(
+                compareByDescending<Pair<String, List<InterceptedNotification>>> { (storageKey, _) ->
+                    // First sort by mimic enabled (true first)
+                    mimicEnabled[storageKey] == true
+                }.thenBy { (_, notificationList) ->
+                    // Then sort alphabetically by app name
+                    notificationList.firstOrNull()?.appName?.lowercase() ?: ""
+                }
+            )
     }
 
     /**
@@ -179,6 +196,7 @@ object NotificationStorage {
         appIcons.clear()
         mimicEnabled.clear()
         regexFilters.clear()
+        disabledApps.clear()
         saveToPrefs()
     }
 
@@ -201,6 +219,50 @@ object NotificationStorage {
     fun isMimicEnabled(packageName: String, profileType: ProfileType): Boolean {
         val storageKey = getStorageKey(packageName, profileType)
         return mimicEnabled[storageKey] == true
+    }
+
+    /**
+     * Disables an app completely - it will not show in the list.
+     * Different from dismiss which clears history but allows app to reappear.
+     */
+    fun disableApp(packageName: String, profileType: ProfileType) {
+        val storageKey = getStorageKey(packageName, profileType)
+        disabledApps[storageKey] = true
+        saveToPrefs()
+    }
+
+    /**
+     * Re-enables a previously disabled app.
+     */
+    fun enableApp(packageName: String, profileType: ProfileType) {
+        val storageKey = getStorageKey(packageName, profileType)
+        disabledApps.remove(storageKey)
+        saveToPrefs()
+    }
+
+    /**
+     * Checks if an app is disabled.
+     */
+    fun isAppDisabled(packageName: String, profileType: ProfileType): Boolean {
+        val storageKey = getStorageKey(packageName, profileType)
+        return disabledApps[storageKey] == true
+    }
+
+    /**
+     * Gets all disabled apps with their notifications.
+     * Returns a list of (storageKey, notificationList) pairs.
+     */
+    fun getDisabledApps(): List<Pair<String, List<InterceptedNotification>>> {
+        return notifications.entries
+            .filter { (storageKey, _) ->
+                disabledApps[storageKey] == true
+            }
+            .map { (storageKey, notificationList) ->
+                storageKey to notificationList.toList()
+            }
+            .sortedBy { (_, notificationList) ->
+                notificationList.firstOrNull()?.appName?.lowercase() ?: ""
+            }
     }
 
     /**
@@ -328,6 +390,11 @@ object NotificationStorage {
                 val filtersJson = gson.toJson(filtersToSave)
                 editor.putString(KEY_REGEX_FILTERS, filtersJson)
 
+                // Save disabled apps
+                val disabledToSave = disabledApps.toMap()
+                val disabledJson = gson.toJson(disabledToSave)
+                editor.putString(KEY_DISABLED_APPS, disabledJson)
+
                 editor.apply()
             } catch (e: Exception) {
                 // Log error but don't crash
@@ -378,12 +445,22 @@ object NotificationStorage {
                     regexFilters.clear()
                     regexFilters.putAll(loadedFilters)
                 }
+
+                // Load disabled apps
+                val disabledJson = prefs.getString(KEY_DISABLED_APPS, null)
+                if (disabledJson != null) {
+                    val type = object : TypeToken<Map<String, Boolean>>() {}.type
+                    val loadedDisabled: Map<String, Boolean> = gson.fromJson(disabledJson, type)
+                    disabledApps.clear()
+                    disabledApps.putAll(loadedDisabled)
+                }
             } catch (e: Exception) {
                 // If loading fails, start fresh
                 notifications.clear()
                 appIcons.clear()
                 mimicEnabled.clear()
                 regexFilters.clear()
+                disabledApps.clear()
             }
         }
     }
