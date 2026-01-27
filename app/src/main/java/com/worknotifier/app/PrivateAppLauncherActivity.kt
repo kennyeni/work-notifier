@@ -209,6 +209,12 @@ class PrivateAppLauncherActivity : Activity() {
     /**
      * Extracts component name from pm query-activities output.
      * Looks for the activity with the launcher intent in the target package.
+     *
+     * The output format is:
+     *   name=com.instagram.android.activity.MainTabActivity
+     *   packageName=com.instagram.android
+     *
+     * We need to combine them into: com.instagram.android/com.instagram.android.activity.MainTabActivity
      */
     private fun extractComponentFromQuery(output: String?, packageName: String): String? {
         if (output.isNullOrEmpty()) {
@@ -216,11 +222,19 @@ class PrivateAppLauncherActivity : Activity() {
             return null
         }
 
-        // Look for "name=<package>/<activity>" pattern in the output
-        // The query-activities output includes "name=" for each activity
-        val nameRegex = Regex("name=($packageName/[^\\s]+)")
+        // Look for "name=<activity>" line in the output
+        val nameRegex = Regex("name=([^\\s]+)")
         val match = nameRegex.find(output)
-        val componentName = match?.groupValues?.get(1)
+        val activityName = match?.groupValues?.get(1)
+
+        if (activityName == null) {
+            Log.w(TAG, "Could not extract activity name from query output")
+            return null
+        }
+
+        // Combine package name and activity name with '/' separator
+        // Format: packageName/activityName
+        val componentName = "$packageName/$activityName"
 
         Log.d(TAG, "Extracted component from query: $componentName")
         return componentName
