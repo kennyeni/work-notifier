@@ -41,15 +41,28 @@ object IconPackHelper {
 
         try {
             // Check if the icon pack is installed
-            try {
+            val isInstalled = try {
                 context.packageManager.getApplicationInfo(iconPackPackage, 0)
-                Log.d(TAG, "Icon pack $iconPackPackage is installed")
+                Log.d(TAG, "Icon pack $iconPackPackage is installed (verified via getApplicationInfo)")
+                true
             } catch (e: PackageManager.NameNotFoundException) {
-                Log.w(TAG, "Icon pack NOT installed: $iconPackPackage")
+                Log.w(TAG, "Icon pack check failed via getApplicationInfo: $iconPackPackage - ${e.message}")
+                Log.d(TAG, "Attempting to get resources directly anyway...")
+                false
+            }
+
+            // Try to get resources even if getApplicationInfo failed
+            // Sometimes the check fails but resources are still accessible
+            val iconPackResources = try {
+                context.packageManager.getResourcesForApplication(iconPackPackage)
+            } catch (e: PackageManager.NameNotFoundException) {
+                Log.w(TAG, "✗ Icon pack NOT installed: $iconPackPackage (resources unavailable)")
                 return mapping
             }
 
-            val iconPackResources = context.packageManager.getResourcesForApplication(iconPackPackage)
+            if (!isInstalled) {
+                Log.d(TAG, "✓ Got resources for $iconPackPackage despite getApplicationInfo failure")
+            }
 
             // Try to find appfilter.xml in res/xml
             var resId = iconPackResources.getIdentifier("appfilter", "xml", iconPackPackage)
