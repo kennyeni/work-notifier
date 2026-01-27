@@ -94,6 +94,8 @@
         </activity>
 
         <!-- Trampoline activity to launch Private Space apps via root -->
+        <!-- exported="true" is required for launcher shortcuts to work -->
+        <!-- Security: Requires root access to function, validates inputs -->
         <activity
             android:name=".PrivateAppLauncherActivity"
             android:exported="true"
