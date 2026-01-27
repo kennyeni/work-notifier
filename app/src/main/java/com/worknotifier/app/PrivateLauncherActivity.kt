@@ -30,6 +30,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.worknotifier.app.data.NotificationStorage
 import com.worknotifier.app.data.ProfileType
 import com.worknotifier.app.utils.RootUtils
+import com.worknotifier.app.utils.IconPackHelper
 
 /**
  * Data class representing a Private profile app.
@@ -53,9 +54,10 @@ class PrivateLauncherActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "PrivateLauncherActivity"
 
-        // Common icon pack packages to try (in priority order)
+        // Icon pack packages to try (in priority order)
+        // IconPackHelper will parse each pack's appfilter.xml to get proper icon mappings
         private val ICON_PACK_PACKAGES = listOf(
-            "com.akbon.myd",             // DynIcons (user's icon pack)
+            "com.akbon.myd",             // DynIcons (Material You Dynamic Icon pack)
             "com.donnnno.arcticons",     // Arcticons
             "rk.android.app.shortcutmaker", // Icon Changer / QuickShortcutMaker
             "com.lx.launcher8",          // Launcher themes
@@ -78,65 +80,11 @@ class PrivateLauncherActivity : AppCompatActivity() {
     }
 
     /**
-     * Tries to get an app icon from installed icon packs.
-     * Tries common icon pack packages and naming patterns.
+     * Tries to get an app icon from installed icon packs using proper appfilter.xml parsing.
+     * Uses IconPackHelper which parses appfilter.xml and extracts package -> drawable mappings.
      */
-    private fun getIconFromDynIcons(packageName: String): Drawable? {
-        // Common icon naming patterns to try
-        val iconNames = listOf(
-            packageName.replace(".", "_"),              // com_example_app
-            packageName.substringAfterLast("."),        // app
-            packageName.substringAfterLast(".").lowercase(), // app (lowercase)
-            // Common app name mappings
-            when (packageName) {
-                "com.instagram.android" -> "instagram"
-                "com.gbinsta.android" -> "instagram"
-                "com.whatsapp" -> "whatsapp"
-                "com.snapchat.android" -> "snapchat"
-                "com.facebook.katana" -> "facebook"
-                "com.twitter.android" -> "twitter"
-                "com.google.android.apps.photos" -> "photos"
-                else -> null
-            }
-        ).filterNotNull().distinct()
-
-        // Try each icon pack package
-        for (iconPackPackage in ICON_PACK_PACKAGES) {
-            try {
-                // Check if this icon pack is installed
-                packageManager.getPackageInfo(iconPackPackage, 0)
-
-                // Try to get resources from this icon pack
-                val iconPackResources = packageManager.getResourcesForApplication(iconPackPackage)
-
-                // Try each icon name pattern
-                for (iconName in iconNames) {
-                    try {
-                        val drawableId = iconPackResources.getIdentifier(
-                            iconName,
-                            "drawable",
-                            iconPackPackage
-                        )
-                        if (drawableId != 0) {
-                            val drawable = iconPackResources.getDrawable(drawableId, null)
-                            if (drawable != null) {
-                                Log.d(TAG, "Found icon for $packageName in $iconPackPackage: $iconName")
-                                return drawable
-                            }
-                        }
-                    } catch (e: Exception) {
-                        // Try next name
-                    }
-                }
-            } catch (e: PackageManager.NameNotFoundException) {
-                // This icon pack is not installed, try next
-            } catch (e: Exception) {
-                Log.d(TAG, "Error accessing icon pack $iconPackPackage: ${e.message}")
-            }
-        }
-
-        Log.d(TAG, "No icon found in any icon pack for $packageName")
-        return null
+    private fun getIconFromIconPacks(packageName: String): Drawable? {
+        return IconPackHelper.getIconFromAnyPack(this, ICON_PACK_PACKAGES, packageName)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -400,16 +348,16 @@ class PrivateLauncherActivity : AppCompatActivity() {
             Log.w(TAG, "Could not get icon from PackageManager", e)
         }
 
-        // Try DynIcons
+        // Try icon packs (DynIcons, etc.)
         try {
-            val dynIcon = getIconFromDynIcons(privateApp.packageName)
-            if (dynIcon != null) {
-                val bitmap = drawableToBitmap(dynIcon)
-                Log.d(TAG, "Using DynIcons icon for shortcut: ${privateApp.packageName}")
+            val iconPackIcon = getIconFromIconPacks(privateApp.packageName)
+            if (iconPackIcon != null) {
+                val bitmap = drawableToBitmap(iconPackIcon)
+                Log.d(TAG, "Using icon pack icon for shortcut: ${privateApp.packageName}")
                 return Icon.createWithBitmap(bitmap)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Could not get icon from DynIcons", e)
+            Log.w(TAG, "Could not get icon from icon packs", e)
         }
 
         // Last resort: use app icon
@@ -488,7 +436,7 @@ class PrivateLauncherActivity : AppCompatActivity() {
                 // Set app icon with fallback chain:
                 // 1. Try cached Base64 icon from notification storage
                 // 2. Try PackageManager (works for personal profile apps)
-                // 3. Try DynIcons icon pack
+                // 3. Try icon packs (parses appfilter.xml for proper mappings)
                 // 4. Use default app icon
                 var appIcon: Drawable? = null
 
@@ -508,11 +456,11 @@ class PrivateLauncherActivity : AppCompatActivity() {
                     }
                 }
 
-                // 3. Try DynIcons icon pack
+                // 3. Try icon packs (DynIcons, etc.)
                 if (appIcon == null) {
-                    appIcon = activity.getIconFromDynIcons(privateApp.packageName)
+                    appIcon = activity.getIconFromIconPacks(privateApp.packageName)
                     if (appIcon != null) {
-                        Log.d("PrivateAppIcon", "Using DynIcons icon for ${privateApp.packageName}")
+                        Log.d("PrivateAppIcon", "Using icon pack for ${privateApp.packageName}")
                     }
                 }
 
