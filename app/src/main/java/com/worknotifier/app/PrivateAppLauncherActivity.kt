@@ -94,25 +94,26 @@ class PrivateAppLauncherActivity : Activity() {
      */
     private fun launchPrivateApp(packageName: String, userId: Int): Boolean {
         return try {
-            // Try multiple approaches to launch the app
+            // Approach 1: Use pm query-activities to get the exact launcher component
+            // This command queries activities in the target user profile
+            val queryCommand = "cmd package query-activities --user $userId -a android.intent.action.MAIN -c android.intent.category.LAUNCHER | grep -A 20 \"packageName=$packageName\""
+            Log.d(TAG, "Querying launcher activities: $queryCommand")
+            val queryOutput = RootUtils.executeRootCommand(queryCommand)
+            Log.d(TAG, "Query output: $queryOutput")
 
-            // Approach 1: Try to resolve and launch with explicit component
-            val resolveCommand = "cmd package resolve-activity --user $userId -c android.intent.category.LAUNCHER $packageName"
-            Log.d(TAG, "Resolving launcher activity: $resolveCommand")
-            val resolveOutput = RootUtils.executeRootCommand(resolveCommand)
-            Log.d(TAG, "Resolve output length: ${resolveOutput?.length ?: 0}, content: '$resolveOutput'")
-
-            val componentName = extractComponentName(resolveOutput)
+            // Extract component name from query output
+            // Output format includes "name=<component>" line
+            val componentName = extractComponentFromQuery(queryOutput, packageName)
 
             if (componentName != null) {
-                Log.d(TAG, "Trying explicit component: $componentName")
+                Log.d(TAG, "Found launcher component via query: $componentName")
                 if (launchWithComponent(componentName, userId)) {
                     return true
                 }
             }
 
             // Approach 2: Try common launcher activity patterns
-            Log.d(TAG, "Resolve failed, trying common launcher activity names")
+            Log.d(TAG, "Query failed, trying common launcher activity names")
             val commonActivities = listOf(
                 ".MainActivity",
                 ".Main",
@@ -129,8 +130,8 @@ class PrivateAppLauncherActivity : Activity() {
                 }
             }
 
-            // Approach 3: Use implicit intent with action and category
-            Log.d(TAG, "Explicit components failed, trying implicit intent")
+            // Approach 3: Use implicit intent with package filter (most compatible)
+            Log.d(TAG, "Explicit components failed, trying implicit intent with package filter")
             val implicitCommand = "am start --user $userId -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p $packageName"
             Log.d(TAG, "Executing: $implicitCommand")
             val output = RootUtils.executeRootCommand(implicitCommand)
@@ -144,6 +145,7 @@ class PrivateAppLauncherActivity : Activity() {
                 Log.d(TAG, "Successfully launched $packageName via implicit intent")
             } else {
                 Log.e(TAG, "All launch approaches failed for $packageName")
+                Log.e(TAG, "Final output: $output")
             }
 
             success
@@ -172,6 +174,26 @@ class PrivateAppLauncherActivity : Activity() {
         }
 
         return success
+    }
+
+    /**
+     * Extracts component name from pm query-activities output.
+     * Looks for the activity with the launcher intent in the target package.
+     */
+    private fun extractComponentFromQuery(output: String?, packageName: String): String? {
+        if (output.isNullOrEmpty()) {
+            Log.w(TAG, "Query output is null or empty")
+            return null
+        }
+
+        // Look for "name=<package>/<activity>" pattern in the output
+        // The query-activities output includes "name=" for each activity
+        val nameRegex = Regex("name=($packageName/[^\\s]+)")
+        val match = nameRegex.find(output)
+        val componentName = match?.groupValues?.get(1)
+
+        Log.d(TAG, "Extracted component from query: $componentName")
+        return componentName
     }
 
     /**
