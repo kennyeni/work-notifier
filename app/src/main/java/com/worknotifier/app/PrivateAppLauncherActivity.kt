@@ -94,9 +94,10 @@ class PrivateAppLauncherActivity : Activity() {
      */
     private fun launchPrivateApp(packageName: String, userId: Int): Boolean {
         return try {
-            // Use Activity Manager to start the app in the Private Space user profile
-            // Must specify action and category for proper app launch
-            val command = "am start --user $userId -a android.intent.action.MAIN -c android.intent.category.LAUNCHER $packageName"
+            // Use monkey command to launch the app in the Private Space user profile
+            // monkey is designed for testing but works reliably for cross-profile app launches
+            // It simulates a user tap on the app's launcher icon in the specified user profile
+            val command = "monkey --user $userId -p $packageName -c android.intent.category.LAUNCHER 1"
 
             Log.d(TAG, "Executing: $command")
             val output = RootUtils.executeRootCommand(command)
@@ -104,8 +105,9 @@ class PrivateAppLauncherActivity : Activity() {
             Log.d(TAG, "Launch output: $output")
 
             // Check if the command succeeded
-            // am start outputs "Error" if it fails
-            val success = output != null && !output.contains("Error", ignoreCase = true)
+            // monkey outputs "Events injected: 1" on success
+            val success = output != null &&
+                         (output.contains("Events injected: 1") || output.contains("// Allowing start of Intent"))
 
             if (!success) {
                 Log.w(TAG, "Launch command may have failed. Output: $output")
