@@ -22,15 +22,20 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.ProgressBar
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.worknotifier.app.data.NotificationStorage
 import com.worknotifier.app.data.ProfileType
 import com.worknotifier.app.utils.RootUtils
 import com.worknotifier.app.utils.IconPackHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Data class representing a Private profile app.
@@ -49,6 +54,7 @@ class PrivateLauncherActivity : AppCompatActivity() {
 
     private lateinit var rvPrivateApps: RecyclerView
     private lateinit var tvEmptyState: TextView
+    private lateinit var progressBar: ProgressBar
     private lateinit var adapter: PrivateAppsAdapter
 
     companion object {
@@ -95,13 +101,14 @@ class PrivateLauncherActivity : AppCompatActivity() {
         // Initialize views
         rvPrivateApps = findViewById(R.id.rvPrivateApps)
         tvEmptyState = findViewById(R.id.tvEmptyState)
+        progressBar = findViewById(R.id.progressBar)
 
         // Set up RecyclerView with grid layout (2 columns)
         adapter = PrivateAppsAdapter(this)
         rvPrivateApps.layoutManager = androidx.recyclerview.widget.GridLayoutManager(this, 2)
         rvPrivateApps.adapter = adapter
 
-        // Load Private profile apps
+        // Load Private profile apps in background
         loadPrivateApps()
     }
 
@@ -113,113 +120,144 @@ class PrivateLauncherActivity : AppCompatActivity() {
     /**
      * Loads all apps from the Private profile.
      * Uses root access to enumerate ALL apps, falls back to notification storage.
+     * Runs on background thread to avoid blocking UI.
      */
     private fun loadPrivateApps() {
-        try {
-            val privateApps = mutableMapOf<String, PrivateApp>()
-
-            // Method 1: Try root access to get ALL Private Space apps
-            if (RootUtils.isRooted()) {
-                try {
-                    val privateUserId = RootUtils.getPrivateSpaceUserId()
-                    if (privateUserId != null) {
-                        Log.d(TAG, "Found Private Space with user ID: $privateUserId")
-
-                        // Get all packages for Private Space user
-                        val packages = RootUtils.getPackagesForUser(privateUserId)
-                        Log.d(TAG, "Found ${packages.size} packages in Private Space")
-
-                        // Get app info for each package
-                        packages.forEach { packageName ->
-                            // Skip system apps by checking if it's a common system package
-                            if (isSystemPackage(packageName)) {
-                                return@forEach
-                            }
-
-                            // Get app label using root (PackageManager can't see Private Space apps)
-                            var appName = RootUtils.getAppLabel(packageName, privateUserId)
-
-                            // Fallback: check notification storage for app name
-                            if (appName == null) {
-                                val storageKey = "$packageName|${ProfileType.PRIVATE.name}"
-                                val notifications = NotificationStorage.getNotificationsForApp(packageName, ProfileType.PRIVATE)
-                                if (notifications.isNotEmpty()) {
-                                    appName = notifications.first().appName
-                                }
-                            }
-
-                            // Fallback: use package name if we couldn't get the label
-                            if (appName == null) {
-                                appName = packageName.substringAfterLast('.')
-                            }
-
-                            // Try to get cached icon from notification storage first
-                            val storageKey = "$packageName|${ProfileType.PRIVATE.name}"
-                            val appIconBase64 = NotificationStorage.getAppIconByKey(storageKey)
-
-                            privateApps[packageName] = PrivateApp(
-                                packageName = packageName,
-                                appName = appName,
-                                appIconBase64 = appIconBase64,
-                                userHandle = null
-                            )
-                        }
-
-                        Log.d(TAG, "Loaded ${privateApps.size} Private Space apps via root")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error getting Private Space apps via root", e)
-                }
-            }
-
-            // Method 2: Fallback - get apps from notification history if root failed or not available
-            if (privateApps.isEmpty()) {
-                Log.d(TAG, "Root access unavailable or no apps found, falling back to notification storage")
-
-                val appsWithNotifications = NotificationStorage.getAppsWithNotifications()
-                appsWithNotifications.forEach { (storageKey, notifications) ->
-                    // Parse storage key: "packageName|profileType"
-                    val parts = storageKey.split("|")
-                    if (parts.size >= 2) {
-                        val packageName = parts[0]
-                        val profileTypeStr = parts[1]
-
-                        // Only include Private profile apps
-                        if (profileTypeStr == ProfileType.PRIVATE.name) {
-                            val appName = notifications.firstOrNull()?.appName ?: packageName
-                            val appIconBase64 = NotificationStorage.getAppIconByKey(storageKey)
-
-                            privateApps[packageName] = PrivateApp(
-                                packageName = packageName,
-                                appName = appName,
-                                appIconBase64 = appIconBase64,
-                                userHandle = null
-                            )
-                        }
-                    }
+        lifecycleScope.launch {
+            try {
+                // Show loading indicator
+                withContext(Dispatchers.Main) {
+                    progressBar.visibility = View.VISIBLE
+                    rvPrivateApps.visibility = View.GONE
+                    tvEmptyState.visibility = View.GONE
                 }
 
-                Log.d(TAG, "Loaded ${privateApps.size} Private Space apps from notifications")
+                // Load apps on background thread (IO operations)
+                val privateApps = withContext(Dispatchers.IO) {
+                    loadPrivateAppsBackground()
+                }
+
+                // Update UI on main thread
+                withContext(Dispatchers.Main) {
+                    progressBar.visibility = View.GONE
+
+                    if (privateApps.isEmpty()) {
+                        rvPrivateApps.visibility = View.GONE
+                        tvEmptyState.visibility = View.VISIBLE
+                    } else {
+                        rvPrivateApps.visibility = View.VISIBLE
+                        tvEmptyState.visibility = View.GONE
+
+                        // Sort apps alphabetically by name
+                        val sortedApps = privateApps.values.sortedBy { it.appName.lowercase() }
+                        adapter.setData(sortedApps)
+                    }
+
+                    Log.d(TAG, "Total: ${privateApps.size} Private Space apps loaded")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading Private Space apps", e)
+                withContext(Dispatchers.Main) {
+                    progressBar.visibility = View.GONE
+                    tvEmptyState.visibility = View.VISIBLE
+                    Toast.makeText(this@PrivateLauncherActivity, "Error loading Private apps: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
-
-            // Update UI
-            if (privateApps.isEmpty()) {
-                rvPrivateApps.visibility = View.GONE
-                tvEmptyState.visibility = View.VISIBLE
-            } else {
-                rvPrivateApps.visibility = View.VISIBLE
-                tvEmptyState.visibility = View.GONE
-
-                // Sort apps alphabetically by name
-                val sortedApps = privateApps.values.sortedBy { it.appName.lowercase() }
-                adapter.setData(sortedApps)
-            }
-
-            Log.d(TAG, "Total: ${privateApps.size} Private Space apps loaded")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading Private Space apps", e)
-            Toast.makeText(this, "Error loading Private apps", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /**
+     * Background task to load Private Space apps.
+     * This runs on a background thread to avoid blocking UI.
+     */
+    private suspend fun loadPrivateAppsBackground(): MutableMap<String, PrivateApp> = withContext(Dispatchers.IO) {
+        val privateApps = mutableMapOf<String, PrivateApp>()
+
+        // Method 1: Try root access to get ALL Private Space apps
+        if (RootUtils.isRooted()) {
+            try {
+                val privateUserId = RootUtils.getPrivateSpaceUserId()
+                if (privateUserId != null) {
+                    Log.d(TAG, "Found Private Space with user ID: $privateUserId")
+
+                    // Get all packages for Private Space user
+                    val packages = RootUtils.getPackagesForUser(privateUserId)
+                    Log.d(TAG, "Found ${packages.size} packages in Private Space")
+
+                    // Get app info for each package
+                    packages.forEach { packageName ->
+                        // Skip system apps by checking if it's a common system package
+                        if (isSystemPackage(packageName)) {
+                            return@forEach
+                        }
+
+                        // Get app label using root (PackageManager can't see Private Space apps)
+                        var appName = RootUtils.getAppLabel(packageName, privateUserId)
+
+                        // Fallback: check notification storage for app name
+                        if (appName == null) {
+                            val storageKey = "$packageName|${ProfileType.PRIVATE.name}"
+                            val notifications = NotificationStorage.getNotificationsForApp(packageName, ProfileType.PRIVATE)
+                            if (notifications.isNotEmpty()) {
+                                appName = notifications.first().appName
+                            }
+                        }
+
+                        // Fallback: use package name if we couldn't get the label
+                        if (appName == null) {
+                            appName = packageName.substringAfterLast('.')
+                        }
+
+                        // Try to get cached icon from notification storage first
+                        val storageKey = "$packageName|${ProfileType.PRIVATE.name}"
+                        val appIconBase64 = NotificationStorage.getAppIconByKey(storageKey)
+
+                        privateApps[packageName] = PrivateApp(
+                            packageName = packageName,
+                            appName = appName,
+                            appIconBase64 = appIconBase64,
+                            userHandle = null
+                        )
+                    }
+
+                    Log.d(TAG, "Loaded ${privateApps.size} Private Space apps via root")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error getting Private Space apps via root", e)
+            }
+        }
+
+        // Method 2: Fallback - get apps from notification history if root failed or not available
+        if (privateApps.isEmpty()) {
+            Log.d(TAG, "Root access unavailable or no apps found, falling back to notification storage")
+
+            val appsWithNotifications = NotificationStorage.getAppsWithNotifications()
+            appsWithNotifications.forEach { (storageKey, notifications) ->
+                // Parse storage key: "packageName|profileType"
+                val parts = storageKey.split("|")
+                if (parts.size >= 2) {
+                    val packageName = parts[0]
+                    val profileTypeStr = parts[1]
+
+                    // Only include Private profile apps
+                    if (profileTypeStr == ProfileType.PRIVATE.name) {
+                        val appName = notifications.firstOrNull()?.appName ?: packageName
+                        val appIconBase64 = NotificationStorage.getAppIconByKey(storageKey)
+
+                        privateApps[packageName] = PrivateApp(
+                            packageName = packageName,
+                            appName = appName,
+                            appIconBase64 = appIconBase64,
+                            userHandle = null
+                        )
+                    }
+                }
+            }
+
+            Log.d(TAG, "Loaded ${privateApps.size} Private Space apps from notifications")
+        }
+
+        return@withContext privateApps
     }
 
     /**
