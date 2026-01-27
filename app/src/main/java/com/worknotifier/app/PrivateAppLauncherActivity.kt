@@ -95,9 +95,8 @@ class PrivateAppLauncherActivity : Activity() {
     private fun launchPrivateApp(packageName: String, userId: Int): Boolean {
         return try {
             // Use Activity Manager to start the app in the Private Space user profile
-            // This is equivalent to: adb shell am start --user <userId> <package>
-            val command = "am start --user $userId -n $packageName/.MainActivity || " +
-                          "am start --user $userId $packageName"
+            // Must specify action and category for proper app launch
+            val command = "am start --user $userId -a android.intent.action.MAIN -c android.intent.category.LAUNCHER $packageName"
 
             Log.d(TAG, "Executing: $command")
             val output = RootUtils.executeRootCommand(command)
