@@ -94,39 +94,59 @@ class PrivateAppLauncherActivity : Activity() {
      */
     private fun launchPrivateApp(packageName: String, userId: Int): Boolean {
         return try {
-            // First, resolve the main launcher activity for this package in the target user
-            // This ensures we get the activity from the correct user profile
+            // Try multiple approaches to launch the app
+
+            // Approach 1: Try to resolve and launch with explicit component
             val resolveCommand = "cmd package resolve-activity --user $userId -c android.intent.category.LAUNCHER $packageName"
             Log.d(TAG, "Resolving launcher activity: $resolveCommand")
             val resolveOutput = RootUtils.executeRootCommand(resolveCommand)
-            Log.d(TAG, "Resolve output: $resolveOutput")
+            Log.d(TAG, "Resolve output length: ${resolveOutput?.length ?: 0}, content: '$resolveOutput'")
 
-            // Extract the component name from resolve output
-            // Output format includes "name=<component>" line
             val componentName = extractComponentName(resolveOutput)
 
             if (componentName != null) {
-                // Launch using the explicit component name
-                val launchCommand = "am start --user $userId -n $componentName"
-                Log.d(TAG, "Executing: $launchCommand")
-                val output = RootUtils.executeRootCommand(launchCommand)
-                Log.d(TAG, "Launch output: $output")
-
-                val success = output != null &&
-                             !output.contains("Error", ignoreCase = true) &&
-                             output.contains("Starting:")
-
-                if (success) {
-                    Log.d(TAG, "Successfully launched $packageName via component $componentName")
-                } else {
-                    Log.w(TAG, "Launch may have failed. Output: $output")
+                Log.d(TAG, "Trying explicit component: $componentName")
+                if (launchWithComponent(componentName, userId)) {
+                    return true
                 }
-
-                return success
-            } else {
-                Log.e(TAG, "Could not extract component name from resolve output")
-                return false
             }
+
+            // Approach 2: Try common launcher activity patterns
+            Log.d(TAG, "Resolve failed, trying common launcher activity names")
+            val commonActivities = listOf(
+                ".MainActivity",
+                ".Main",
+                ".SplashActivity",
+                ".LauncherActivity",
+                ".ui.MainActivity"
+            )
+
+            for (activity in commonActivities) {
+                val component = "$packageName/$activity"
+                Log.d(TAG, "Trying common pattern: $component")
+                if (launchWithComponent(component, userId)) {
+                    return true
+                }
+            }
+
+            // Approach 3: Use implicit intent with action and category
+            Log.d(TAG, "Explicit components failed, trying implicit intent")
+            val implicitCommand = "am start --user $userId -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p $packageName"
+            Log.d(TAG, "Executing: $implicitCommand")
+            val output = RootUtils.executeRootCommand(implicitCommand)
+            Log.d(TAG, "Implicit launch output: $output")
+
+            val success = output != null &&
+                         !output.contains("Error", ignoreCase = true) &&
+                         (output.contains("Starting:") || output.contains("start"))
+
+            if (success) {
+                Log.d(TAG, "Successfully launched $packageName via implicit intent")
+            } else {
+                Log.e(TAG, "All launch approaches failed for $packageName")
+            }
+
+            success
 
         } catch (e: Exception) {
             Log.e(TAG, "Exception launching app", e)
@@ -135,11 +155,34 @@ class PrivateAppLauncherActivity : Activity() {
     }
 
     /**
+     * Attempts to launch an app using an explicit component name.
+     */
+    private fun launchWithComponent(componentName: String, userId: Int): Boolean {
+        val launchCommand = "am start --user $userId -n $componentName"
+        Log.d(TAG, "Executing: $launchCommand")
+        val output = RootUtils.executeRootCommand(launchCommand)
+        Log.d(TAG, "Launch output: $output")
+
+        val success = output != null &&
+                     !output.contains("Error", ignoreCase = true) &&
+                     output.contains("Starting:")
+
+        if (success) {
+            Log.d(TAG, "Successfully launched via component $componentName")
+        }
+
+        return success
+    }
+
+    /**
      * Extracts the component name from cmd package resolve-activity output.
      * Looks for the "name=<component>" line in the output.
      */
     private fun extractComponentName(output: String?): String? {
-        if (output == null) return null
+        if (output.isNullOrEmpty()) {
+            Log.w(TAG, "Resolve output is null or empty")
+            return null
+        }
 
         // Look for "name=<package>/<activity>" pattern
         val nameRegex = Regex("name=([^\\s]+)")
