@@ -52,11 +52,11 @@ object IconPackHelper {
                 // Try assets folder
                 try {
                     val assetManager = iconPackResources.assets
-                    val inputStream = assetManager.open("appfilter.xml")
-                    val parser = android.util.Xml.newPullParser()
-                    parser.setInput(inputStream, "UTF-8")
-                    parseAppFilterXml(parser, mapping)
-                    inputStream.close()
+                    assetManager.open("appfilter.xml").use { inputStream ->
+                        val parser = android.util.Xml.newPullParser()
+                        parser.setInput(inputStream, "UTF-8")
+                        parseAppFilterXml(parser, mapping)
+                    }
                     Log.d(TAG, "Parsed appfilter.xml from assets for $iconPackPackage: ${mapping.size} mappings")
                 } catch (e: IOException) {
                     Log.d(TAG, "No appfilter.xml found in assets for $iconPackPackage")

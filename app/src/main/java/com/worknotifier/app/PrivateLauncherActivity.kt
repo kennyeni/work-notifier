@@ -68,6 +68,10 @@ class PrivateLauncherActivity : AppCompatActivity() {
 
     /**
      * Checks if a package is a system package that should be filtered out.
+     *
+     * Note: Instagram apps (com.instagram.android, com.gbinsta.android) are excluded from
+     * the ".android." filter because they use ".android" in their package name but are
+     * user-installed apps, not system packages.
      */
     private fun isSystemPackage(packageName: String): Boolean {
         return packageName.startsWith("com.android.") ||
@@ -76,7 +80,7 @@ class PrivateLauncherActivity : AppCompatActivity() {
                 packageName == "com.android.systemui" ||
                 packageName == "com.android.settings" ||
                 packageName == "com.android.vending" ||
-                packageName.contains(".android.") && !packageName.contains("instagram")
+                (packageName.contains(".android.") && !packageName.contains("instagram"))
     }
 
     /**
@@ -227,6 +231,10 @@ class PrivateLauncherActivity : AppCompatActivity() {
 
     /**
      * Creates a pinned shortcut for a Private profile app.
+     *
+     * Note: We create a basic ACTION_MAIN intent since PackageManager.getLaunchIntentForPackage()
+     * returns null for Private Space apps (personal profile can't access them).
+     * Android handles the cross-profile launching automatically.
      */
     fun createShortcut(privateApp: PrivateApp) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
@@ -259,58 +267,37 @@ class PrivateLauncherActivity : AppCompatActivity() {
                 return
             }
 
-            // Create intent to launch the app
-            // Note: Launching apps from other profiles requires the app to be in the same profile
-            // or use cross-profile intent APIs. Since we're in the personal profile,
-            // we'll create an intent that the launcher can handle.
-            val launchIntent = packageManager.getLaunchIntentForPackage(privateApp.packageName)
-
-            if (launchIntent == null) {
-                // Try to create a basic launch intent
-                val intent = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_LAUNCHER)
-                    setPackage(privateApp.packageName)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-
-                // Create shortcut with icon
-                val shortcutIcon = createShortcutIcon(privateApp)
-
-                val shortcut = ShortcutInfo.Builder(this, shortcutId)
-                    .setShortLabel(privateApp.appName)
-                    .setLongLabel(privateApp.appName)
-                    .setIcon(shortcutIcon)
-                    .setIntent(intent)
-                    .build()
-
-                // Request to pin the shortcut
-                val pinnedShortcutCallbackIntent = shortcutManager.createShortcutResultIntent(shortcut)
-                shortcutManager.requestPinShortcut(shortcut, null)
-
-                Toast.makeText(
-                    this,
-                    "Creating shortcut for ${privateApp.appName}",
-                    Toast.LENGTH_SHORT
-                ).show()
-            } else {
-                // We have a launch intent from PackageManager
-                val shortcutIcon = createShortcutIcon(privateApp)
-
-                val shortcut = ShortcutInfo.Builder(this, shortcutId)
-                    .setShortLabel(privateApp.appName)
-                    .setLongLabel(privateApp.appName)
-                    .setIcon(shortcutIcon)
-                    .setIntent(launchIntent)
-                    .build()
-
-                shortcutManager.requestPinShortcut(shortcut, null)
-
-                Toast.makeText(
-                    this,
-                    "Creating shortcut for ${privateApp.appName}",
-                    Toast.LENGTH_SHORT
-                ).show()
+            // Create a basic ACTION_MAIN intent
+            // PackageManager.getLaunchIntentForPackage() returns null for Private Space apps
+            // because the personal profile can't access them. Instead, we create a basic
+            // intent and let Android handle the cross-profile launching.
+            val launchIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                setPackage(privateApp.packageName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
             }
+
+            // Create shortcut with icon
+            val shortcutIcon = createShortcutIcon(privateApp)
+
+            val shortcut = ShortcutInfo.Builder(this, shortcutId)
+                .setShortLabel(privateApp.appName)
+                .setLongLabel(privateApp.appName)
+                .setIcon(shortcutIcon)
+                .setIntent(launchIntent)
+                .build()
+
+            // Request to pin the shortcut
+            shortcutManager.requestPinShortcut(shortcut, null)
+
+            Toast.makeText(
+                this,
+                "Creating shortcut for ${privateApp.appName}",
+                Toast.LENGTH_SHORT
+            ).show()
+
+            Log.d(TAG, "Created shortcut for ${privateApp.packageName} (Private Space)")
         } catch (e: Exception) {
             Log.e(TAG, "Error creating shortcut for ${privateApp.packageName}", e)
             Toast.makeText(
@@ -322,47 +309,85 @@ class PrivateLauncherActivity : AppCompatActivity() {
     }
 
     /**
-     * Creates an Icon for the shortcut from the app's icon.
+     * Gets the best available icon for an app using the standard fallback chain.
+     * This method is used by both UI display and shortcut creation to ensure consistency.
+     *
+     * Fallback order:
+     * 1. Cached Base64 icon from notification storage
+     * 2. PackageManager (works for personal profile apps)
+     * 3. Icon packs (parses appfilter.xml for proper mappings)
+     * 4. Default app icon
      */
-    private fun createShortcutIcon(privateApp: PrivateApp): Icon {
-        // Try to use stored icon first (from notification cache)
+    private fun getAppIconDrawable(privateApp: PrivateApp): Drawable {
+        // 1. Try cached icon from notification storage
         if (!privateApp.appIconBase64.isNullOrBlank()) {
             try {
-                val bitmap = decodeBase64ToBitmap(privateApp.appIconBase64)
-                if (bitmap != null) {
-                    Log.d(TAG, "Using cached icon for shortcut: ${privateApp.packageName}")
-                    return Icon.createWithBitmap(bitmap)
+                val icon = decodeBase64ToDrawable(privateApp.appIconBase64)
+                if (icon != null) {
+                    Log.d(TAG, "Using cached icon for ${privateApp.packageName}")
+                    return icon
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Could not decode stored icon", e)
             }
         }
 
-        // Try PackageManager
+        // 2. Try PackageManager (usually won't work for Private Space apps)
         try {
-            val appIcon = packageManager.getApplicationIcon(privateApp.packageName)
-            val bitmap = drawableToBitmap(appIcon)
-            Log.d(TAG, "Using PackageManager icon for shortcut: ${privateApp.packageName}")
-            return Icon.createWithBitmap(bitmap)
+            val icon = packageManager.getApplicationIcon(privateApp.packageName)
+            Log.d(TAG, "Using PackageManager icon for ${privateApp.packageName}")
+            return icon
         } catch (e: Exception) {
-            Log.w(TAG, "Could not get icon from PackageManager", e)
+            // Expected for Private Space apps
         }
 
-        // Try icon packs (DynIcons, etc.)
+        // 3. Try icon packs (DynIcons, etc.)
         try {
-            val iconPackIcon = getIconFromIconPacks(privateApp.packageName)
-            if (iconPackIcon != null) {
-                val bitmap = drawableToBitmap(iconPackIcon)
-                Log.d(TAG, "Using icon pack icon for shortcut: ${privateApp.packageName}")
-                return Icon.createWithBitmap(bitmap)
+            val icon = getIconFromIconPacks(privateApp.packageName)
+            if (icon != null) {
+                Log.d(TAG, "Using icon pack for ${privateApp.packageName}")
+                return icon
             }
         } catch (e: Exception) {
             Log.w(TAG, "Could not get icon from icon packs", e)
         }
 
-        // Last resort: use app icon
-        Log.d(TAG, "Using default icon for shortcut: ${privateApp.packageName}")
-        return Icon.createWithResource(this, R.mipmap.ic_launcher)
+        // 4. Fallback to default icon
+        Log.d(TAG, "Using default icon for ${privateApp.packageName}")
+        return ContextCompat.getDrawable(this, R.mipmap.ic_launcher)!!
+    }
+
+    /**
+     * Creates an Icon for the shortcut from the app's icon.
+     * Uses the same fallback chain as UI display for consistency.
+     */
+    private fun createShortcutIcon(privateApp: PrivateApp): Icon {
+        val drawable = getAppIconDrawable(privateApp)
+        val bitmap = drawableToBitmap(drawable)
+        return Icon.createWithBitmap(bitmap)
+    }
+
+    /**
+     * Decodes a Base64 encoded string to a Drawable.
+     * Shared utility to avoid code duplication.
+     */
+    private fun decodeBase64ToDrawable(base64: String): Drawable? {
+        return try {
+            val decodedBytes = try {
+                Base64.decode(base64, Base64.NO_WRAP)
+            } catch (e: Exception) {
+                Base64.decode(base64, Base64.DEFAULT)
+            }
+            val bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+            if (bitmap != null) {
+                BitmapDrawable(resources, bitmap)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error decoding Base64 to Drawable", e)
+            null
+        }
     }
 
     /**
@@ -381,23 +406,6 @@ class PrivateLauncherActivity : AppCompatActivity() {
         drawable.setBounds(0, 0, canvas.width, canvas.height)
         drawable.draw(canvas)
         return bitmap
-    }
-
-    /**
-     * Decodes a Base64 string to a Bitmap.
-     */
-    private fun decodeBase64ToBitmap(base64: String): Bitmap? {
-        return try {
-            val decodedBytes = try {
-                Base64.decode(base64, Base64.NO_WRAP)
-            } catch (e: Exception) {
-                Base64.decode(base64, Base64.DEFAULT)
-            }
-            BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error decoding Base64 to Bitmap", e)
-            null
-        }
     }
 
     /**
@@ -431,46 +439,10 @@ class PrivateLauncherActivity : AppCompatActivity() {
             private val tvAppName: TextView = itemView.findViewById(R.id.tvPrivateAppName)
 
             fun bind(activity: PrivateLauncherActivity, privateApp: PrivateApp) {
-                val context = itemView.context
-
-                // Set app icon with fallback chain:
-                // 1. Try cached Base64 icon from notification storage
-                // 2. Try PackageManager (works for personal profile apps)
-                // 3. Try icon packs (parses appfilter.xml for proper mappings)
-                // 4. Use default app icon
-                var appIcon: Drawable? = null
-
-                // 1. Try cached icon from notification storage
-                if (!privateApp.appIconBase64.isNullOrBlank()) {
-                    appIcon = decodeBase64ToDrawable(context, privateApp.appIconBase64)
-                    if (appIcon != null) {
-                        Log.d("PrivateAppIcon", "Using cached icon for ${privateApp.packageName}")
-                    }
-                }
-
-                // 2. Try PackageManager (usually won't work for Private Space apps)
-                if (appIcon == null) {
-                    appIcon = getAppIconFromPackageManager(context, privateApp.packageName)
-                    if (appIcon != null) {
-                        Log.d("PrivateAppIcon", "Using PackageManager icon for ${privateApp.packageName}")
-                    }
-                }
-
-                // 3. Try icon packs (DynIcons, etc.)
-                if (appIcon == null) {
-                    appIcon = activity.getIconFromIconPacks(privateApp.packageName)
-                    if (appIcon != null) {
-                        Log.d("PrivateAppIcon", "Using icon pack for ${privateApp.packageName}")
-                    }
-                }
-
-                // 4. Fallback to default icon
-                if (appIcon != null) {
-                    ivAppIcon.setImageDrawable(appIcon)
-                } else {
-                    Log.d("PrivateAppIcon", "Using default icon for ${privateApp.packageName}")
-                    ivAppIcon.setImageResource(R.mipmap.ic_launcher)
-                }
+                // Use the activity's getAppIconDrawable method for consistency
+                // This ensures UI and shortcuts use the same icon fallback chain
+                val appIcon = activity.getAppIconDrawable(privateApp)
+                ivAppIcon.setImageDrawable(appIcon)
 
                 // Set app name
                 tvAppName.text = privateApp.appName
@@ -478,38 +450,6 @@ class PrivateLauncherActivity : AppCompatActivity() {
                 // Make entire card clickable to create shortcut
                 itemView.setOnClickListener {
                     activity.createShortcut(privateApp)
-                }
-            }
-
-            /**
-             * Decodes a Base64 encoded string back to a Drawable.
-             */
-            private fun decodeBase64ToDrawable(context: Context, base64: String): Drawable? {
-                return try {
-                    val decodedBytes = try {
-                        Base64.decode(base64, Base64.NO_WRAP)
-                    } catch (e: Exception) {
-                        Base64.decode(base64, Base64.DEFAULT)
-                    }
-                    val bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
-                    if (bitmap != null) {
-                        BitmapDrawable(context.resources, bitmap)
-                    } else {
-                        null
-                    }
-                } catch (e: Exception) {
-                    null
-                }
-            }
-
-            /**
-             * Gets app icon from PackageManager.
-             */
-            private fun getAppIconFromPackageManager(context: Context, packageName: String): Drawable? {
-                return try {
-                    context.packageManager.getApplicationIcon(packageName)
-                } catch (e: PackageManager.NameNotFoundException) {
-                    null
                 }
             }
         }
