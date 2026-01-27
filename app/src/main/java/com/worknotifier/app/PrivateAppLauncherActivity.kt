@@ -94,29 +94,59 @@ class PrivateAppLauncherActivity : Activity() {
      */
     private fun launchPrivateApp(packageName: String, userId: Int): Boolean {
         return try {
-            // Use monkey command to launch the app in the Private Space user profile
-            // monkey is designed for testing but works reliably for cross-profile app launches
-            // It simulates a user tap on the app's launcher icon in the specified user profile
-            val command = "monkey --user $userId -p $packageName -c android.intent.category.LAUNCHER 1"
+            // First, resolve the main launcher activity for this package in the target user
+            // This ensures we get the activity from the correct user profile
+            val resolveCommand = "cmd package resolve-activity --user $userId -c android.intent.category.LAUNCHER $packageName"
+            Log.d(TAG, "Resolving launcher activity: $resolveCommand")
+            val resolveOutput = RootUtils.executeRootCommand(resolveCommand)
+            Log.d(TAG, "Resolve output: $resolveOutput")
 
-            Log.d(TAG, "Executing: $command")
-            val output = RootUtils.executeRootCommand(command)
+            // Extract the component name from resolve output
+            // Output format includes "name=<component>" line
+            val componentName = extractComponentName(resolveOutput)
 
-            Log.d(TAG, "Launch output: $output")
+            if (componentName != null) {
+                // Launch using the explicit component name
+                val launchCommand = "am start --user $userId -n $componentName"
+                Log.d(TAG, "Executing: $launchCommand")
+                val output = RootUtils.executeRootCommand(launchCommand)
+                Log.d(TAG, "Launch output: $output")
 
-            // Check if the command succeeded
-            // monkey outputs "Events injected: 1" on success
-            val success = output != null &&
-                         (output.contains("Events injected: 1") || output.contains("// Allowing start of Intent"))
+                val success = output != null &&
+                             !output.contains("Error", ignoreCase = true) &&
+                             output.contains("Starting:")
 
-            if (!success) {
-                Log.w(TAG, "Launch command may have failed. Output: $output")
+                if (success) {
+                    Log.d(TAG, "Successfully launched $packageName via component $componentName")
+                } else {
+                    Log.w(TAG, "Launch may have failed. Output: $output")
+                }
+
+                return success
+            } else {
+                Log.e(TAG, "Could not extract component name from resolve output")
+                return false
             }
 
-            success
         } catch (e: Exception) {
             Log.e(TAG, "Exception launching app", e)
             false
         }
+    }
+
+    /**
+     * Extracts the component name from cmd package resolve-activity output.
+     * Looks for the "name=<component>" line in the output.
+     */
+    private fun extractComponentName(output: String?): String? {
+        if (output == null) return null
+
+        // Look for "name=<package>/<activity>" pattern
+        val nameRegex = Regex("name=([^\\s]+)")
+        val match = nameRegex.find(output)
+        val componentName = match?.groupValues?.get(1)
+
+        Log.d(TAG, "Extracted component name: $componentName")
+        return componentName
     }
 }
