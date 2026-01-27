@@ -68,6 +68,17 @@
                 android:name="android.support.PARENT_ACTIVITY"
                 android:value=".InterceptedAppsActivity" />
         </activity>
+
+        <!-- Activity to create shortcuts for Private profile apps -->
+        <activity
+            android:name=".PrivateLauncherActivity"
+            android:exported="false"
+            android:label="@string/private_launcher_title"
+            android:parentActivityName=".MainActivity">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".MainActivity" />
+        </activity>
     </application>
 
 </manifest>

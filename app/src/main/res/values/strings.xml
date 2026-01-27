@@ -56,4 +56,11 @@
     <string name="android_auto_status_checking">Checking Android Auto status…</string>
     <string name="android_auto_status_connected">Android Auto: Connected (%s)</string>
     <string name="android_auto_status_not_connected">Android Auto: Not Connected</string>
+
+    <!-- Private Launcher -->
+    <string name="private_launcher">Private Launcher</string>
+    <string name="private_launcher_title">Private App Shortcuts</string>
+    <string name="private_launcher_description">Create launcher shortcuts for Private Space apps. Tap an app to create a shortcut on your home screen.</string>
+    <string name="create_shortcut">Create Shortcut</string>
+    <string name="no_private_apps_found">No Private Space apps found.\n\nMake sure Private Space is unlocked and apps have sent notifications.</string>
 </resources>

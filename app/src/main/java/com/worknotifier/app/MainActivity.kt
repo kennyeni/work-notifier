@@ -66,6 +66,12 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(this, InterceptedAppsActivity::class.java)
             startActivity(intent)
         }
+
+        findViewById<MaterialButton>(R.id.btnPrivateLauncher).setOnClickListener {
+            // Launch the PrivateLauncherActivity
+            val intent = Intent(this, PrivateLauncherActivity::class.java)
+            startActivity(intent)
+        }
     }
 
     private fun createNotificationChannel() {
