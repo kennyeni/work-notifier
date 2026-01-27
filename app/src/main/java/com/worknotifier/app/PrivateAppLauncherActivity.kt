@@ -112,7 +112,21 @@ class PrivateAppLauncherActivity : Activity() {
                 }
             }
 
-            // Approach 2: Try common launcher activity patterns
+            // Approach 2: Try using am stack start (may bypass some permission checks)
+            Log.d(TAG, "Standard am start failed, trying am stack start")
+            if (componentName != null) {
+                val stackCommand = "am stack start --user $userId -n $componentName"
+                Log.d(TAG, "Executing: $stackCommand")
+                val stackOutput = RootUtils.executeRootCommand(stackCommand)
+                Log.d(TAG, "Stack start output: $stackOutput")
+
+                if (stackOutput != null && !stackOutput.contains("Error", ignoreCase = true)) {
+                    Log.d(TAG, "Successfully launched via am stack start")
+                    return true
+                }
+            }
+
+            // Approach 3: Try common launcher activity patterns
             Log.d(TAG, "Query failed, trying common launcher activity names")
             val commonActivities = listOf(
                 ".MainActivity",
@@ -130,7 +144,23 @@ class PrivateAppLauncherActivity : Activity() {
                 }
             }
 
-            // Approach 3: Use implicit intent with package filter (most compatible)
+            // Approach 4: Try launching with --as-user flag (different from --user)
+            Log.d(TAG, "Trying am start with --as-user flag")
+            if (componentName != null) {
+                val asUserCommand = "am start --as-user $userId -n $componentName"
+                Log.d(TAG, "Executing: $asUserCommand")
+                val asUserOutput = RootUtils.executeRootCommand(asUserCommand)
+                Log.d(TAG, "As-user output: $asUserOutput")
+
+                if (asUserOutput != null &&
+                    !asUserOutput.contains("Error", ignoreCase = true) &&
+                    asUserOutput.contains("Starting:")) {
+                    Log.d(TAG, "Successfully launched via --as-user")
+                    return true
+                }
+            }
+
+            // Approach 5: Use implicit intent with package filter (most compatible)
             Log.d(TAG, "Explicit components failed, trying implicit intent with package filter")
             val implicitCommand = "am start --user $userId -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p $packageName"
             Log.d(TAG, "Executing: $implicitCommand")
