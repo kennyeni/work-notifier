@@ -96,13 +96,14 @@ class PrivateAppLauncherActivity : Activity() {
         return try {
             // Approach 1: Use pm query-activities to get the exact launcher component
             // This command queries activities in the target user profile
-            val queryCommand = "cmd package query-activities --user $userId -a android.intent.action.MAIN -c android.intent.category.LAUNCHER | grep -A 20 \"packageName=$packageName\""
+            // We grep with -B to get lines BEFORE packageName= (where the activity name is)
+            val queryCommand = "cmd package query-activities --user $userId -a android.intent.action.MAIN -c android.intent.category.LAUNCHER | grep -B 2 -A 5 \"packageName=$packageName\""
             Log.d(TAG, "Querying launcher activities: $queryCommand")
             val queryOutput = RootUtils.executeRootCommand(queryCommand)
             Log.d(TAG, "Query output: $queryOutput")
 
             // Extract component name from query output
-            // Output format includes "name=<component>" line
+            // Output format includes "name=<component>" line BEFORE packageName= line
             val componentName = extractComponentFromQuery(queryOutput, packageName)
 
             if (componentName != null) {
@@ -215,6 +216,8 @@ class PrivateAppLauncherActivity : Activity() {
      *   packageName=com.instagram.android
      *
      * We need to combine them into: com.instagram.android/com.instagram.android.activity.MainTabActivity
+     *
+     * IMPORTANT: Avoid matching the ApplicationInfo name which appears later with extra indentation.
      */
     private fun extractComponentFromQuery(output: String?, packageName: String): String? {
         if (output.isNullOrEmpty()) {
@@ -222,13 +225,36 @@ class PrivateAppLauncherActivity : Activity() {
             return null
         }
 
-        // Look for "name=<activity>" line in the output
-        val nameRegex = Regex("name=([^\\s]+)")
+        // Look for "name=<activity>" line at the start of a line (no leading spaces)
+        // This ensures we get the activity name, not the ApplicationInfo name
+        // The ApplicationInfo name has extra indentation (spaces before "name=")
+        val nameRegex = Regex("^\\s*name=([^\\s]+)", RegexOption.MULTILINE)
         val match = nameRegex.find(output)
         val activityName = match?.groupValues?.get(1)
 
         if (activityName == null) {
             Log.w(TAG, "Could not extract activity name from query output")
+            return null
+        }
+
+        // Filter out ApplicationInfo names (they start with lowercase or different pattern)
+        // Activity names typically start with the package name or uppercase
+        if (activityName.contains("AppShell") || activityName.contains("Application")) {
+            Log.w(TAG, "Matched ApplicationInfo name instead of activity: $activityName")
+            // Try to find the next match
+            val allMatches = nameRegex.findAll(output).toList()
+            if (allMatches.size > 1) {
+                // Use the first match that looks like an activity
+                val activityMatch = allMatches.firstOrNull {
+                    it.groupValues[1].startsWith(packageName)
+                }
+                if (activityMatch != null) {
+                    val realActivityName = activityMatch.groupValues[1]
+                    val componentName = "$packageName/$realActivityName"
+                    Log.d(TAG, "Extracted component from query (2nd attempt): $componentName")
+                    return componentName
+                }
+            }
             return null
         }
 
