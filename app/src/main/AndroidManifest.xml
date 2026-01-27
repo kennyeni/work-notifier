@@ -92,6 +92,14 @@
                 android:name="android.support.PARENT_ACTIVITY"
                 android:value=".MainActivity" />
         </activity>
+
+        <!-- Trampoline activity to launch Private Space apps via root -->
+        <activity
+            android:name=".PrivateAppLauncherActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
     </application>
 
 </manifest>

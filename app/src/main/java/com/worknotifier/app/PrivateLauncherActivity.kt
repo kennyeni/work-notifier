@@ -283,9 +283,9 @@ class PrivateLauncherActivity : AppCompatActivity() {
     /**
      * Creates a pinned shortcut for a Private profile app.
      *
-     * Note: We create a basic ACTION_MAIN intent since PackageManager.getLaunchIntentForPackage()
-     * returns null for Private Space apps (personal profile can't access them).
-     * Android handles the cross-profile launching automatically.
+     * The shortcut launches PrivateAppLauncherActivity (a trampoline) which uses root
+     * to execute: `am start --user <private_user_id> <package>`
+     * This is necessary because the personal profile cannot directly launch Private Space apps.
      */
     private fun createShortcut(privateApp: PrivateApp, customName: String = privateApp.appName) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
@@ -318,15 +318,13 @@ class PrivateLauncherActivity : AppCompatActivity() {
                 return
             }
 
-            // Create a basic ACTION_MAIN intent
-            // PackageManager.getLaunchIntentForPackage() returns null for Private Space apps
-            // because the personal profile can't access them. Instead, we create a basic
-            // intent and let Android handle the cross-profile launching.
-            val launchIntent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_LAUNCHER)
-                setPackage(privateApp.packageName)
+            // Create intent that launches our trampoline activity
+            // The trampoline will use root to launch the Private Space app
+            val launchIntent = Intent(this, PrivateAppLauncherActivity::class.java).apply {
+                putExtra(PrivateAppLauncherActivity.EXTRA_PACKAGE_NAME, privateApp.packageName)
+                putExtra(PrivateAppLauncherActivity.EXTRA_APP_NAME, customName)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
             }
 
             // Create shortcut with icon
