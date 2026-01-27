@@ -5,6 +5,19 @@
     <!-- Permission to post notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Package visibility queries for icon packs (Android 11+) -->
+    <queries>
+        <!-- DynIcons - Material You Dynamic Icon pack -->
+        <package android:name="com.akbon.myd" />
+
+        <!-- Other popular icon packs -->
+        <package android:name="com.donnnno.arcticons" />
+        <package android:name="rk.android.app.shortcutmaker" />
+        <package android:name="com.lx.launcher8" />
+        <package android:name="ginlemon.flowerfree" />
+        <package android:name="com.novalauncher.icons.perfect" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
