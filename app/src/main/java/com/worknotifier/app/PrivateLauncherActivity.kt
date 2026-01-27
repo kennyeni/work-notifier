@@ -191,26 +191,20 @@ class PrivateLauncherActivity : AppCompatActivity() {
                             return@forEach
                         }
 
-                        // Get app label using root (PackageManager can't see Private Space apps)
-                        var appName = RootUtils.getAppLabel(packageName, privateUserId)
-
-                        // Fallback: check notification storage for app name
-                        if (appName == null) {
-                            val storageKey = "$packageName|${ProfileType.PRIVATE.name}"
-                            val notifications = NotificationStorage.getNotificationsForApp(packageName, ProfileType.PRIVATE)
-                            if (notifications.isNotEmpty()) {
-                                appName = notifications.first().appName
-                            }
-                        }
-
-                        // Fallback: use package name if we couldn't get the label
-                        if (appName == null) {
-                            appName = packageName.substringAfterLast('.')
-                        }
-
-                        // Try to get cached icon from notification storage first
+                        // Check notification storage for app name first (faster)
                         val storageKey = "$packageName|${ProfileType.PRIVATE.name}"
+                        val notifications = NotificationStorage.getNotificationsForApp(packageName, ProfileType.PRIVATE)
                         val appIconBase64 = NotificationStorage.getAppIconByKey(storageKey)
+
+                        val appName = if (notifications.isNotEmpty()) {
+                            // We have the app name from notifications (fast path)
+                            notifications.first().appName
+                        } else {
+                            // Only use root to get label if we don't have it from notifications
+                            // This is slow, so we skip it to avoid the spinner being stuck
+                            // RootUtils.getAppLabel(packageName, privateUserId)
+                            null
+                        } ?: packageName.substringAfterLast('.') // Fallback to package name
 
                         privateApps[packageName] = PrivateApp(
                             packageName = packageName,
