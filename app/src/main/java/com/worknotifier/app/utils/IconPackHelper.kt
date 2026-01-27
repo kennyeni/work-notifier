@@ -70,8 +70,9 @@ object IconPackHelper {
             if (resId != 0) {
                 // Found in res/xml
                 Log.d(TAG, "Found appfilter.xml in res/xml for $iconPackPackage (resId: $resId)")
-                val parser = iconPackResources.getXml(resId)
-                parseAppFilterXml(parser, mapping)
+                iconPackResources.getXml(resId).use { parser ->
+                    parseAppFilterXml(parser, mapping)
+                }
                 Log.d(TAG, "✓ Parsed appfilter.xml from res/xml for $iconPackPackage: ${mapping.size} mappings")
             } else {
                 // Try assets folder

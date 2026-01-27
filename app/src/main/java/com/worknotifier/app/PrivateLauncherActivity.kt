@@ -404,7 +404,8 @@ class PrivateLauncherActivity : AppCompatActivity() {
 
         // 4. Fallback to default icon
         Log.d(TAG, "Using default icon for ${privateApp.packageName}")
-        return ContextCompat.getDrawable(this, R.mipmap.ic_launcher)!!
+        return ContextCompat.getDrawable(this, R.mipmap.ic_launcher)
+            ?: resources.getDrawable(android.R.drawable.sym_def_app_icon, null)
     }
 
     /**
@@ -442,14 +443,23 @@ class PrivateLauncherActivity : AppCompatActivity() {
 
     /**
      * Converts a Drawable to a Bitmap.
+     * Limits size to prevent memory pressure from very large icons.
      */
     private fun drawableToBitmap(drawable: Drawable): Bitmap {
         if (drawable is BitmapDrawable && drawable.bitmap != null) {
             return drawable.bitmap
         }
 
-        val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 96
-        val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 96
+        // Limit icon size to prevent memory issues
+        val maxSize = 192 // Max 192px for launcher icons
+        val width = minOf(
+            if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 96,
+            maxSize
+        )
+        val height = minOf(
+            if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 96,
+            maxSize
+        )
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(bitmap)
