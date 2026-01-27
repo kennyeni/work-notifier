@@ -321,6 +321,7 @@ class PrivateLauncherActivity : AppCompatActivity() {
             // Create intent that launches our trampoline activity
             // The trampoline will use root to launch the Private Space app
             val launchIntent = Intent(this, PrivateAppLauncherActivity::class.java).apply {
+                action = Intent.ACTION_MAIN  // Required by ShortcutInfo
                 putExtra(PrivateAppLauncherActivity.EXTRA_PACKAGE_NAME, privateApp.packageName)
                 putExtra(PrivateAppLauncherActivity.EXTRA_APP_NAME, customName)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
