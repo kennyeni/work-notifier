@@ -20,10 +20,12 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.ProgressBar
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -255,13 +257,37 @@ class PrivateLauncherActivity : AppCompatActivity() {
     }
 
     /**
+     * Shows a dialog to let the user name the app before creating a shortcut.
+     */
+    fun showShortcutNameDialog(privateApp: PrivateApp) {
+        val input = EditText(this)
+        input.setText(privateApp.appName)
+        input.selectAll()
+
+        AlertDialog.Builder(this)
+            .setTitle("Name Shortcut")
+            .setMessage("Choose a name for the shortcut:")
+            .setView(input)
+            .setPositiveButton("Create") { _, _ ->
+                val customName = input.text.toString().trim()
+                if (customName.isNotEmpty()) {
+                    createShortcut(privateApp, customName)
+                } else {
+                    Toast.makeText(this, "Shortcut name cannot be empty", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /**
      * Creates a pinned shortcut for a Private profile app.
      *
      * Note: We create a basic ACTION_MAIN intent since PackageManager.getLaunchIntentForPackage()
      * returns null for Private Space apps (personal profile can't access them).
      * Android handles the cross-profile launching automatically.
      */
-    fun createShortcut(privateApp: PrivateApp) {
+    private fun createShortcut(privateApp: PrivateApp, customName: String = privateApp.appName) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             Toast.makeText(this, "Shortcuts require Android 8.0+", Toast.LENGTH_SHORT).show()
             return
@@ -286,7 +312,7 @@ class PrivateLauncherActivity : AppCompatActivity() {
             if (existingShortcuts.any { it.id == shortcutId }) {
                 Toast.makeText(
                     this,
-                    "Shortcut already exists for ${privateApp.appName}",
+                    "Shortcut already exists for $customName",
                     Toast.LENGTH_SHORT
                 ).show()
                 return
@@ -307,8 +333,8 @@ class PrivateLauncherActivity : AppCompatActivity() {
             val shortcutIcon = createShortcutIcon(privateApp)
 
             val shortcut = ShortcutInfo.Builder(this, shortcutId)
-                .setShortLabel(privateApp.appName)
-                .setLongLabel(privateApp.appName)
+                .setShortLabel(customName)
+                .setLongLabel(customName)
                 .setIcon(shortcutIcon)
                 .setIntent(launchIntent)
                 .build()
@@ -318,11 +344,11 @@ class PrivateLauncherActivity : AppCompatActivity() {
 
             Toast.makeText(
                 this,
-                "Creating shortcut for ${privateApp.appName}",
+                "Creating shortcut for $customName",
                 Toast.LENGTH_SHORT
             ).show()
 
-            Log.d(TAG, "Created shortcut for ${privateApp.packageName} (Private Space)")
+            Log.d(TAG, "Created shortcut '$customName' for ${privateApp.packageName} (Private Space)")
         } catch (e: Exception) {
             Log.e(TAG, "Error creating shortcut for ${privateApp.packageName}", e)
             Toast.makeText(
@@ -472,9 +498,9 @@ class PrivateLauncherActivity : AppCompatActivity() {
                 // Set app name
                 tvAppName.text = privateApp.appName
 
-                // Make entire card clickable to create shortcut
+                // Make entire card clickable to show name dialog
                 itemView.setOnClickListener {
-                    activity.createShortcut(privateApp)
+                    activity.showShortcutNameDialog(privateApp)
                 }
             }
         }

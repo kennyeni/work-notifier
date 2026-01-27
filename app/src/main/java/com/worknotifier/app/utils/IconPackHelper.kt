@@ -29,15 +29,26 @@ object IconPackHelper {
      * We extract: com.instagram.android -> instagram
      */
     fun parseIconPack(context: Context, iconPackPackage: String): Map<String, String> {
+        Log.d(TAG, "parseIconPack() called for: $iconPackPackage")
+
         // Check cache first
         iconPackCache[iconPackPackage]?.let {
-            Log.d(TAG, "Using cached icon pack: $iconPackPackage")
+            Log.d(TAG, "Using cached icon pack: $iconPackPackage (${it.size} mappings)")
             return it
         }
 
         val mapping = mutableMapOf<String, String>()
 
         try {
+            // Check if the icon pack is installed
+            try {
+                context.packageManager.getApplicationInfo(iconPackPackage, 0)
+                Log.d(TAG, "Icon pack $iconPackPackage is installed")
+            } catch (e: PackageManager.NameNotFoundException) {
+                Log.w(TAG, "Icon pack NOT installed: $iconPackPackage")
+                return mapping
+            }
+
             val iconPackResources = context.packageManager.getResourcesForApplication(iconPackPackage)
 
             // Try to find appfilter.xml in res/xml
@@ -45,33 +56,39 @@ object IconPackHelper {
 
             if (resId != 0) {
                 // Found in res/xml
+                Log.d(TAG, "Found appfilter.xml in res/xml for $iconPackPackage (resId: $resId)")
                 val parser = iconPackResources.getXml(resId)
                 parseAppFilterXml(parser, mapping)
-                Log.d(TAG, "Parsed appfilter.xml from res/xml for $iconPackPackage: ${mapping.size} mappings")
+                Log.d(TAG, "✓ Parsed appfilter.xml from res/xml for $iconPackPackage: ${mapping.size} mappings")
             } else {
                 // Try assets folder
+                Log.d(TAG, "appfilter.xml not in res/xml, trying assets for $iconPackPackage")
                 try {
                     val assetManager = iconPackResources.assets
                     assetManager.open("appfilter.xml").use { inputStream ->
+                        Log.d(TAG, "Found appfilter.xml in assets for $iconPackPackage")
                         val parser = android.util.Xml.newPullParser()
                         parser.setInput(inputStream, "UTF-8")
                         parseAppFilterXml(parser, mapping)
                     }
-                    Log.d(TAG, "Parsed appfilter.xml from assets for $iconPackPackage: ${mapping.size} mappings")
+                    Log.d(TAG, "✓ Parsed appfilter.xml from assets for $iconPackPackage: ${mapping.size} mappings")
                 } catch (e: IOException) {
-                    Log.d(TAG, "No appfilter.xml found in assets for $iconPackPackage")
+                    Log.w(TAG, "✗ No appfilter.xml found in assets for $iconPackPackage: ${e.message}")
                 }
             }
 
             // Cache the result
             if (mapping.isNotEmpty()) {
                 iconPackCache[iconPackPackage] = mapping
+                Log.d(TAG, "Cached ${mapping.size} mappings for $iconPackPackage")
+            } else {
+                Log.w(TAG, "No mappings found for $iconPackPackage")
             }
 
         } catch (e: PackageManager.NameNotFoundException) {
-            Log.w(TAG, "Icon pack not found: $iconPackPackage")
+            Log.w(TAG, "✗ Icon pack not found: $iconPackPackage")
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing icon pack $iconPackPackage", e)
+            Log.e(TAG, "✗ Error parsing icon pack $iconPackPackage", e)
         }
 
         return mapping
@@ -130,6 +147,8 @@ object IconPackHelper {
         iconPackPackage: String,
         targetPackage: String
     ): Drawable? {
+        Log.d(TAG, "getIconForPackage() called - iconPack: $iconPackPackage, target: $targetPackage")
+
         try {
             // Parse the icon pack (uses cache if already parsed)
             val mapping = parseIconPack(context, iconPackPackage)
@@ -137,9 +156,16 @@ object IconPackHelper {
             // Get the drawable name for this package
             val drawableName = mapping[targetPackage]
             if (drawableName == null) {
-                Log.d(TAG, "No icon mapping found for $targetPackage in $iconPackPackage")
+                Log.d(TAG, "✗ No icon mapping found for $targetPackage in $iconPackPackage (total mappings: ${mapping.size})")
+                // Log first few mappings to help debug
+                if (mapping.isNotEmpty()) {
+                    val sampleMappings = mapping.entries.take(5).joinToString(", ") { "${it.key} -> ${it.value}" }
+                    Log.d(TAG, "  Sample mappings: $sampleMappings")
+                }
                 return null
             }
+
+            Log.d(TAG, "Found mapping: $targetPackage -> $drawableName")
 
             // Get the icon pack's resources
             val iconPackResources = context.packageManager.getResourcesForApplication(iconPackPackage)
@@ -152,21 +178,25 @@ object IconPackHelper {
             )
 
             if (drawableId == 0) {
-                Log.d(TAG, "Drawable '$drawableName' not found in $iconPackPackage")
+                Log.w(TAG, "✗ Drawable '$drawableName' not found in $iconPackPackage (resId is 0)")
                 return null
             }
+
+            Log.d(TAG, "Found drawable resource: $drawableName (resId: $drawableId)")
 
             // Get and return the drawable
             val drawable = iconPackResources.getDrawable(drawableId, null)
             if (drawable != null) {
-                Log.d(TAG, "Found icon for $targetPackage in $iconPackPackage: $drawableName")
+                Log.d(TAG, "✓ Successfully loaded icon for $targetPackage from $iconPackPackage: $drawableName")
+            } else {
+                Log.w(TAG, "✗ Failed to load drawable for $drawableName (null returned)")
             }
             return drawable
 
         } catch (e: PackageManager.NameNotFoundException) {
-            Log.w(TAG, "Icon pack not found: $iconPackPackage")
+            Log.w(TAG, "✗ Icon pack not found: $iconPackPackage")
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting icon for $targetPackage from $iconPackPackage", e)
+            Log.e(TAG, "✗ Error getting icon for $targetPackage from $iconPackPackage", e)
         }
 
         return null
@@ -185,12 +215,18 @@ object IconPackHelper {
         iconPackPackages: List<String>,
         targetPackage: String
     ): Drawable? {
+        Log.d(TAG, "getIconFromAnyPack() called for $targetPackage - trying ${iconPackPackages.size} icon packs")
+
         for (iconPackPackage in iconPackPackages) {
+            Log.d(TAG, "Trying icon pack: $iconPackPackage for $targetPackage")
             val icon = getIconForPackage(context, iconPackPackage, targetPackage)
             if (icon != null) {
+                Log.d(TAG, "✓ Found icon in $iconPackPackage for $targetPackage")
                 return icon
             }
         }
+
+        Log.d(TAG, "✗ No icon found in any icon pack for $targetPackage")
         return null
     }
 
