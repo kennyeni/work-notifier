@@ -4,70 +4,37 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_margin="8dp"
-    app:cardCornerRadius="8dp"
-    app:cardElevation="2dp">
+    app:cardCornerRadius="12dp"
+    app:cardElevation="2dp"
+    android:foreground="?android:attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="12dp"
-        android:gravity="center_vertical">
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:gravity="center">
 
         <ImageView
             android:id="@+id/ivPrivateAppIcon"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
             android:contentDescription="@string/app_icon_description"
             android:scaleType="fitCenter" />
 
-        <LinearLayout
-            android:layout_width="0dp"
+        <TextView
+            android:id="@+id/tvPrivateAppName"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="12dp"
-            android:layout_marginEnd="12dp"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/tvPrivateAppName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary" />
-
-            <TextView
-                android:id="@+id/tvPrivateAppPackage"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="12sp"
-                android:textColor="?android:attr/textColorSecondary"
-                android:layout_marginTop="4dp" />
-
-            <TextView
-                android:id="@+id/tvPrivateBadge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/private_profile_badge"
-                android:textSize="10sp"
-                android:textColor="@color/private_profile_badge"
-                android:background="@drawable/private_profile_badge_bg"
-                android:paddingStart="6dp"
-                android:paddingEnd="6dp"
-                android:paddingTop="2dp"
-                android:paddingBottom="2dp"
-                android:layout_marginTop="4dp" />
-
-        </LinearLayout>
-
-        <Button
-            android:id="@+id/btnCreateShortcut"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/create_shortcut"
+            android:layout_marginTop="8dp"
             android:textSize="14sp"
-            style="?attr/materialButtonOutlinedStyle" />
+            android:textStyle="bold"
+            android:textColor="?android:attr/textColorPrimary"
+            android:gravity="center"
+            android:maxLines="2"
+            android:ellipsize="end" />
 
     </LinearLayout>
 

@@ -125,4 +125,37 @@ object RootUtils {
         return profileName?.contains("Work", ignoreCase = true) == true ||
                 profileName?.contains("工作", ignoreCase = true) == true // Chinese name
     }
+
+    /**
+     * Gets all installed packages for a specific user.
+     * Returns a list of package names.
+     */
+    fun getPackagesForUser(userId: Int): List<String> {
+        val output = executeRootCommand("pm list packages --user $userId") ?: return emptyList()
+        val packages = mutableListOf<String>()
+
+        // Parse output like: "package:com.android.vending"
+        output.lines().forEach { line ->
+            if (line.startsWith("package:")) {
+                val packageName = line.substring(8).trim()
+                if (packageName.isNotEmpty()) {
+                    packages.add(packageName)
+                }
+            }
+        }
+
+        Log.d(TAG, "Found ${packages.size} packages for user $userId")
+        return packages
+    }
+
+    /**
+     * Gets the Private Space user ID if it exists.
+     * Returns null if Private Space is not found.
+     */
+    fun getPrivateSpaceUserId(): Int? {
+        val userProfiles = getUserProfileInfo()
+        return userProfiles.entries.find { (userId, profileName) ->
+            isPrivateProfile(userId, profileName)
+        }?.key
+    }
 }
