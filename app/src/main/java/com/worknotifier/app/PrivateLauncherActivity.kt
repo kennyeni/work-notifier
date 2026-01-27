@@ -53,8 +53,9 @@ class PrivateLauncherActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "PrivateLauncherActivity"
 
-        // Common icon pack packages to try
+        // Common icon pack packages to try (in priority order)
         private val ICON_PACK_PACKAGES = listOf(
+            "com.akbon.myd",             // DynIcons (user's icon pack)
             "com.donnnno.arcticons",     // Arcticons
             "rk.android.app.shortcutmaker", // Icon Changer / QuickShortcutMaker
             "com.lx.launcher8",          // Launcher themes
