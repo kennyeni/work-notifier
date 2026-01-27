@@ -31,6 +31,15 @@ The app uses `NotificationListenerService` to intercept notifications from:
 - Deduplication by notification key with improved validation
 - Persistent notification history (survives app restart)
 
+### Private Space Launcher Shortcuts
+- List all Private Space apps that have sent notifications
+- Create pinned launcher shortcuts for Private Space apps
+- Shortcuts display with app icon and name
+- Purple "PRIVATE" badge on app list
+- Duplicate shortcut detection with toast notification
+- Shortcuts automatically grayed out by launcher when Private Space is locked
+- Requires Android 8.0+ (ShortcutManager API)
+
 ### Android Auto Test Notifications
 - Send MessagingStyle test notifications
 - Compatible with Android Auto
@@ -57,6 +66,7 @@ work-notifier/
 │   │   ├── MessagingService.kt
 │   │   ├── NotificationInterceptorService.kt  # Core interception logic
 │   │   ├── InterceptedAppsActivity.kt        # Display intercepted apps
+│   │   ├── PrivateLauncherActivity.kt        # Create shortcuts for Private apps
 │   │   ├── data/
 │   │   │   ├── InterceptedNotification.kt    # Data model with ProfileType enum and icon storage
 │   │   │   └── NotificationStorage.kt        # Persistent and in-memory storage
@@ -108,6 +118,17 @@ Displays intercepted apps and their notifications with:
 - Dismiss buttons for individual notifications and entire apps
 - Permission request UI
 
+### PrivateLauncherActivity.kt
+Creates launcher shortcuts for Private Space apps with:
+- Lists all Private Space apps from notification storage
+- Displays app icons (from Base64 cache) and names
+- Purple "PRIVATE" badge for each app
+- "Create Shortcut" button for each app
+- Uses Android ShortcutManager API for pinned shortcuts
+- Duplicate shortcut detection with toast notification
+- Shortcuts automatically grayed out when Private Space is locked
+- Works with Pixel Launcher and other standard Android launchers
+
 ### NotificationStorage.kt
 Persistent and in-memory storage with:
 - **Composite key**: Stores apps by "packageName|profileType" to differentiate same app across profiles
@@ -151,7 +172,16 @@ If root access is available (Magisk), the app can:
 
 ## Building the Project
 
-### Local Build
+### Claude Code Online Environment
+**IMPORTANT**: When working in Claude Code online environments, do NOT attempt to run local Gradle builds. Network restrictions prevent Gradle from downloading dependencies, and builds will fail.
+
+**Instead:**
+- Make code changes and commit them
+- Push to the development branch
+- GitHub Actions CI/CD will automatically build and validate changes
+- Check the GitHub Actions workflow results for build status
+
+### Local Build (Local Development Only)
 ```bash
 ./gradlew assembleDebug
 ```
@@ -201,6 +231,6 @@ The build uses deterministic keystore generation (`build_jks.gradle`) to ensure 
 
 ---
 
-**Last Updated**: 2026-01-22
+**Last Updated**: 2026-01-27
 **Android Version**: Android 15 (API 35)
 **Build System**: Gradle 8.2
