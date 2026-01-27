@@ -68,19 +68,12 @@ class PrivateLauncherActivity : AppCompatActivity() {
 
     /**
      * Checks if a package is a system package that should be filtered out.
-     *
-     * Note: Instagram apps (com.instagram.android, com.gbinsta.android) are excluded from
-     * the ".android." filter because they use ".android" in their package name but are
-     * user-installed apps, not system packages.
+     * Only filters well-known Android system package prefixes.
      */
     private fun isSystemPackage(packageName: String): Boolean {
         return packageName.startsWith("com.android.") ||
                 packageName.startsWith("com.google.android.") ||
-                packageName.startsWith("android.") ||
-                packageName == "com.android.systemui" ||
-                packageName == "com.android.settings" ||
-                packageName == "com.android.vending" ||
-                (packageName.contains(".android.") && !packageName.contains("instagram"))
+                packageName.startsWith("android.")
     }
 
     /**
