@@ -158,4 +158,34 @@ object RootUtils {
             isPrivateProfile(userId, profileName)
         }?.key
     }
+
+    /**
+     * Gets the application label (friendly name) for a package in a specific user profile.
+     * Uses root to access the package info directly.
+     */
+    fun getAppLabel(packageName: String, userId: Int): String? {
+        // Try using pm dump to get the application label
+        val output = executeRootCommand("pm dump $packageName --user $userId") ?: return null
+
+        // Look for "Application Label:" in the output
+        output.lines().forEach { line ->
+            if (line.trim().startsWith("Application Label:")) {
+                val label = line.substringAfter("Application Label:").trim()
+                if (label.isNotEmpty() && label != packageName) {
+                    Log.d(TAG, "Found label for $packageName: $label")
+                    return label
+                }
+            }
+        }
+
+        // Fallback: try to get label from package list with -f flag
+        val listOutput = executeRootCommand("pm list packages -f --user $userId | grep $packageName") ?: return null
+        // Output format: "package:/data/app/~~hash/com.example.app/base.apk=com.example.app"
+        // We just want to confirm the package exists
+        if (listOutput.contains(packageName)) {
+            Log.d(TAG, "Package $packageName exists in user $userId but couldn't get label")
+        }
+
+        return null
+    }
 }
