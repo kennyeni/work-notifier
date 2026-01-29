@@ -558,7 +558,7 @@ class NotificationInterceptorService : NotificationListenerService() {
         val channel = NotificationChannel(
             MIMIC_CHANNEL_ID,
             MIMIC_CHANNEL_NAME,
-            NotificationManager.IMPORTANCE_DEFAULT
+            NotificationManager.IMPORTANCE_HIGH
         ).apply {
             description = "Mimic notifications from other apps"
         }
