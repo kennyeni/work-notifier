@@ -17,6 +17,7 @@ if (localPropsFile.exists()) {
 android {
     namespace 'com.worknotifier.app'
     compileSdk 35
+    buildToolsVersion "35.0.0"
 
     defaultConfig {
         applicationId "com.worknotifier.app"

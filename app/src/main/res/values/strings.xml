@@ -32,6 +32,7 @@
     <string name="dismiss">Dismiss</string>
     <string name="dismiss_app">Dismiss App</string>
     <string name="disable_app">Disable App</string>
+    <string name="mimic">Mimic</string>
     <string name="load_more">Load More</string>
     <string name="mimic_notifications_description">Enable notification mimicking for this app</string>
     <string name="manage_disabled_apps">Manage Disabled Apps</string>

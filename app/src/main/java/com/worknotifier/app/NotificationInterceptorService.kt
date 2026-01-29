@@ -558,7 +558,7 @@ class NotificationInterceptorService : NotificationListenerService() {
         val channel = NotificationChannel(
             MIMIC_CHANNEL_ID,
             MIMIC_CHANNEL_NAME,
-            NotificationManager.IMPORTANCE_DEFAULT
+            NotificationManager.IMPORTANCE_HIGH
         ).apply {
             description = "Mimic notifications from other apps"
         }
@@ -707,34 +707,58 @@ class NotificationInterceptorService : NotificationListenerService() {
                 }
             }
 
-            // Create capability indicator message (added at the end)
+            // Create capability indicator text (appended to message)
             val capabilityIndicator = if (hasReplyAction) {
-                "ℹ️ You can reply to this"
+                "\nℹ️ You can reply to this"
             } else {
-                "ℹ️ Reply not available"
+                "\nℹ️ Reply not available"
             }
 
             // Create or recreate MessagingStyle for Android Auto compatibility
             val messagingStyle = if (originalMessagingStyle != null) {
-                // Use original MessagingStyle if available and add capability indicator
-                originalMessagingStyle.addMessage(
-                    capabilityIndicator,
-                    System.currentTimeMillis(),
-                    deviceUser
-                )
-            } else {
-                // Create new MessagingStyle with the message and capability indicator
-                NotificationCompat.MessagingStyle(deviceUser)
-                    .setConversationTitle("$senderName$profileBadge")
-                    .addMessage(
-                        text ?: "(No message content)",
+                // Use original MessagingStyle and append indicator to last message
+                val messages = originalMessagingStyle.messages
+                val newStyle = NotificationCompat.MessagingStyle(deviceUser)
+
+                // Inherit conversation title from original
+                originalMessagingStyle.conversationTitle?.let {
+                    newStyle.setConversationTitle(it)
+                }
+
+                if (messages.isNotEmpty()) {
+                    // Add all messages except the last one
+                    messages.dropLast(1).forEach { msg ->
+                        newStyle.addMessage(msg.text, msg.timestamp, msg.person)
+                    }
+
+                    // Add the last message with appended capability indicator
+                    val lastMessage = messages.last()
+                    val lastMessageText = lastMessage.text?.toString() ?: ""
+                    newStyle.addMessage(
+                        lastMessageText + capabilityIndicator,
+                        lastMessage.timestamp,
+                        lastMessage.person
+                    )
+                } else {
+                    // No messages in original style, add a default message
+                    newStyle.addMessage(
+                        (text ?: "(No message content)") + capabilityIndicator,
                         System.currentTimeMillis(),
                         senderPerson
                     )
+                }
+
+                newStyle
+            } else {
+                // Create new MessagingStyle with single message including capability indicator
+                val messageText = (text ?: "(No message content)") + capabilityIndicator
+
+                NotificationCompat.MessagingStyle(deviceUser)
+                    .setConversationTitle("$senderName$profileBadge")
                     .addMessage(
-                        capabilityIndicator,
-                        System.currentTimeMillis() + 1,
-                        deviceUser
+                        messageText,
+                        System.currentTimeMillis(),
+                        senderPerson
                     )
             }
 

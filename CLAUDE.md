@@ -1,4 +1,8 @@
-# Work Notifier - Claude Development Guide
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+# Work Notifier - Development Guide
 
 ## Project Overview
 
@@ -172,35 +176,48 @@ If root access is available (Magisk), the app can:
 
 ## Building the Project
 
-### Claude Code Online Environment
-**IMPORTANT**: When working in Claude Code online environments, do NOT attempt to run local Gradle builds. Network restrictions prevent Gradle from downloading dependencies, and builds will fail.
+### Build Commands
 
-**Instead:**
-- Make code changes and commit them
-- Push to the development branch
-- GitHub Actions CI/CD will automatically build and validate changes
-- Check the GitHub Actions workflow results for build status
-
-### Local Build (Local Development Only)
+**Build debug APK:**
 ```bash
 ./gradlew assembleDebug
 ```
 
-### CI Build
-GitHub Actions automatically builds on PR and push to main/master.
+**Build and deploy (cleans, builds, and installs via ADB):**
+```bash
+./build-and-deploy.sh              # Normal output
+./build-and-deploy.sh --verbose    # Verbose output
+```
 
-The build uses deterministic keystore generation (`build_jks.gradle`) to ensure consistent APK signing across builds, allowing updates without uninstall/reinstall.
+The build script automatically:
+- Detects OS (Windows/Linux) and copies appropriate `local.properties`
+- Cleans stale build-tools directories
+- Builds the debug APK
+- Uninstalls previous version (if ADB available)
+- Installs new APK on connected device (if ADB available)
 
-**Artifacts:**
-- `app-debug.apk` (7-day retention)
-- `lint-results-debug.html` (7-day retention)
+### CI/CD Environment
 
-## Installation & Setup
+**IMPORTANT for Cloud Claude**: Do NOT attempt local Gradle builds in cloud environments. Network restrictions prevent dependency downloads.
 
-1. Install the APK
+**Instead:**
+1. Make code changes and commit
+2. Push to development branch
+3. GitHub Actions CI/CD automatically builds and validates
+4. Check workflow results in GitHub Actions tab
+
+GitHub Actions automatically builds on PR and push to main/master with:
+- Deterministic keystore generation (`build_jks.gradle`) for consistent APK signing
+- Advanced Gradle caching (branch-scoped)
+- Lint validation
+- 7-day artifact retention (`app-debug.apk`, `lint-results-debug.html`)
+
+## Installation & Testing
+
+1. Install the APK (via `./build-and-deploy.sh` or `adb install app/build/outputs/apk/debug/app-debug.apk`)
 2. Grant Notification Access permission (Settings → Notification Access)
 3. Tap "Select Apps" to view intercepted notifications
-4. Optionally grant root access for better profile detection
+4. Optionally grant root access for better profile detection (if rooted with Magisk)
 
 ## Private Space Support
 
@@ -224,13 +241,28 @@ The build uses deterministic keystore generation (`build_jks.gradle`) to ensure 
 - Respects Android's profile isolation boundaries
 - Read-only access to notification data
 
-## Git Workflow
+## Architecture Notes
 
-- **Development Branch**: `claude/android-auto-notification-toggle-CSvb3`
-- **Main Branch**: `main`
+### Data Flow
+1. **Notification Interception**: `NotificationInterceptorService.onNotificationPosted()` intercepts all notifications system-wide
+2. **Profile Detection**: `determineProfileType()` uses UserHandle comparison and optional root access to identify PERSONAL/WORK/PRIVATE
+3. **Icon Capture**: `getAppIconBase64()` captures and encodes app icon as Base64 (solves cross-profile icon access)
+4. **Storage**: `NotificationStorage` uses composite key "packageName|profileType" for multi-profile tracking
+5. **UI Display**: `InterceptedAppsActivity` shows apps grouped by profile with RecyclerView-based lists
+
+### Storage Architecture
+- **In-Memory**: `ConcurrentHashMap` for thread-safe access
+- **Persistence**: SharedPreferences with Gson serialization (survives app/device restarts)
+- **Deduplication**: By notification key with validation for timestamps and content
+- **Limits**: 100 notifications per app per profile, 10 displayed per page
+
+### Cross-Profile Challenges
+- Personal profile `PackageManager` cannot access Work/Private app icons or metadata
+- Solution: Capture and encode icons as Base64 when notification is intercepted (service has access)
+- Profile detection: UserHandle comparison + optional root for profile name detection
 
 ---
 
-**Last Updated**: 2026-01-27
+**Last Updated**: 2026-01-28
 **Android Version**: Android 15 (API 35)
 **Build System**: Gradle 8.2

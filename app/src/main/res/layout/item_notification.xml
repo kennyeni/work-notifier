@@ -64,6 +64,18 @@
             tools:visibility="visible" />
 
         <Button
+            android:id="@+id/btnMimicNotification"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/mimic"
+            android:textSize="11sp"
+            android:minHeight="0dp"
+            android:paddingTop="0dp"
+            android:paddingBottom="0dp"
+            android:textColor="@color/teal_200" />
+
+        <Button
             android:id="@+id/btnDismissNotification"
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"

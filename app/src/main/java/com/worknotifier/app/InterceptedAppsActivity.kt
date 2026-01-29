@@ -359,6 +359,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     val tvText: TextView = notificationView.findViewById(R.id.tvNotificationText)
                     val tvTime: TextView = notificationView.findViewById(R.id.tvNotificationTime)
                     val tvExpandCollapse: TextView = notificationView.findViewById(R.id.tvExpandCollapse)
+                    val btnMimicNotification: Button = notificationView.findViewById(R.id.btnMimicNotification)
                     val btnDismissNotification: Button = notificationView.findViewById(R.id.btnDismissNotification)
 
                     tvTitle.text = notification.title ?: context.getString(R.string.no_title)
@@ -373,6 +374,20 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     } else {
                         // Non-matching notification - grayed out
                         notificationView.alpha = 0.35f
+                    }
+
+                    // Set up mimic notification button
+                    btnMimicNotification.setOnClickListener {
+                        // Trigger mimic via intent to NotificationInterceptorService
+                        val intent = Intent(context, NotificationInterceptorService::class.java)
+                        intent.action = "MIMIC_NOTIFICATION"
+                        intent.putExtra("packageName", packageName)
+                        intent.putExtra("appName", notification.appName)
+                        intent.putExtra("title", notification.title)
+                        intent.putExtra("text", notification.text)
+                        intent.putExtra("profileType", profileType.name)
+                        intent.putExtra("appIconBase64", notification.appIconBase64)
+                        context.startService(intent)
                     }
 
                     // Set up dismiss notification button
