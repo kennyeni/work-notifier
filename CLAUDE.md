@@ -172,24 +172,32 @@ If root access is available (Magisk), the app can:
 
 ## Building the Project
 
-### Claude Code Online Environment
-**IMPORTANT**: When working in Claude Code online environments, do NOT attempt to run local Gradle builds. Network restrictions prevent Gradle from downloading dependencies, and builds will fail.
+### Local Development (WSL/Linux)
+Use the build-and-deploy script:
+```bash
+./build-and-deploy.sh
+```
 
-**Instead:**
-- Make code changes and commit them
-- Push to the development branch
-- GitHub Actions CI/CD will automatically build and validate changes
-- Check the GitHub Actions workflow results for build status
-
-### Local Build (Local Development Only)
+Or build only (without deploying):
 ```bash
 ./gradlew assembleDebug
 ```
 
-### CI Build
+**Requirements**: `local.properties` must have `sdk.dir` set to your Android SDK path
+
+### Cloud Claude (Claude Code Online)
+**IMPORTANT**: Do NOT attempt local Gradle builds in cloud environments. Network restrictions prevent dependency downloads.
+
+**Instead:**
+1. Make code changes and commit
+2. Push to development branch
+3. GitHub Actions CI/CD automatically builds and validates
+4. Check workflow results in GitHub Actions tab
+
+### Build Artifacts & CI
 GitHub Actions automatically builds on PR and push to main/master.
 
-The build uses deterministic keystore generation (`build_jks.gradle`) to ensure consistent APK signing across builds, allowing updates without uninstall/reinstall.
+Deterministic keystore generation (`build_jks.gradle`) ensures consistent APK signing across builds.
 
 **Artifacts:**
 - `app-debug.apk` (7-day retention)
