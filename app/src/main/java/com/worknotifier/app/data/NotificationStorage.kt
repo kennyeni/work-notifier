@@ -92,17 +92,10 @@ object NotificationStorage {
         }
 
         // Remove any existing notification with the same key
-        // This prevents true duplicates from the system
+        // Each notification key is unique (format: USER_ID|PACKAGE_NAME|TAG|ID)
+        // If Android assigns different keys, they ARE different notifications
+        // This handles system duplicates and notification updates
         appNotifications.removeAll { it.key == notification.key }
-
-        // Remove notifications with identical content posted within 1 second (true duplicates)
-        // This catches cases where apps post same notification with different keys
-        // but doesn't filter out legitimate repeated messages (e.g., Slack conversations)
-        appNotifications.removeAll {
-            it.title == notification.title &&
-            it.text == notification.text &&
-            Math.abs(it.timestamp - notification.timestamp) < 1000
-        }
 
         // Add the new notification at the beginning (without icon to save space)
         val notificationWithoutIcon = notification.copy(appIconBase64 = null)
