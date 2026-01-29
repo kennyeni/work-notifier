@@ -12,8 +12,19 @@ import java.util.concurrent.ConcurrentHashMap
  * Then, notification must NOT match any exclude pattern.
  */
 data class RegexFilters(
-    val includePatterns: MutableList<String> = mutableListOf(),
-    val excludePatterns: MutableList<String> = mutableListOf()
+    val includePatterns: MutableList<FilterPattern> = mutableListOf(),
+    val excludePatterns: MutableList<FilterPattern> = mutableListOf()
+)
+
+/**
+ * Represents match information for a filter pattern.
+ */
+data class FilterMatch(
+    val pattern: FilterPattern,
+    val matchedText: String,
+    val startIndex: Int,
+    val endIndex: Int,
+    val isInclude: Boolean
 )
 
 /**
@@ -310,21 +321,14 @@ object NotificationStorage {
     fun matchesFilters(notification: InterceptedNotification): Boolean {
         val filters = getRegexFilters(notification.packageName, notification.profileType)
 
-        // Combine title and text for matching
-        val content = "${notification.title ?: ""} ${notification.text ?: ""}".trim()
-
         // Filter out blank patterns before checking
-        val validIncludePatterns = filters.includePatterns.filter { it.isNotBlank() }
-        val validExcludePatterns = filters.excludePatterns.filter { it.isNotBlank() }
+        val validIncludePatterns = filters.includePatterns.filter { it.pattern.isNotBlank() }
+        val validExcludePatterns = filters.excludePatterns.filter { it.pattern.isNotBlank() }
 
         // If include patterns exist, must match at least one
         if (validIncludePatterns.isNotEmpty()) {
             val matchesInclude = validIncludePatterns.any { pattern ->
-                try {
-                    content.contains(Regex(pattern, RegexOption.IGNORE_CASE))
-                } catch (e: Exception) {
-                    false // Invalid regex = no match
-                }
+                patternMatchesField(pattern, notification.title, notification.text)
             }
             if (!matchesInclude) {
                 return false
@@ -334,11 +338,7 @@ object NotificationStorage {
         // Must NOT match any exclude pattern
         if (validExcludePatterns.isNotEmpty()) {
             val matchesExclude = validExcludePatterns.any { pattern ->
-                try {
-                    content.contains(Regex(pattern, RegexOption.IGNORE_CASE))
-                } catch (e: Exception) {
-                    false // Invalid regex = no match
-                }
+                patternMatchesField(pattern, notification.title, notification.text)
             }
             if (matchesExclude) {
                 return false
@@ -346,6 +346,96 @@ object NotificationStorage {
         }
 
         return true
+    }
+
+    /**
+     * Checks if a pattern matches the notification fields based on pattern settings.
+     */
+    private fun patternMatchesField(pattern: FilterPattern, title: String?, text: String?): Boolean {
+        try {
+            val regex = Regex(pattern.pattern, RegexOption.IGNORE_CASE)
+
+            val titleMatches = pattern.matchTitle && title != null && regex.containsMatchIn(title)
+            val contentMatches = pattern.matchContent && text != null && regex.containsMatchIn(text)
+
+            return titleMatches || contentMatches
+        } catch (e: Exception) {
+            return false // Invalid regex = no match
+        }
+    }
+
+    /**
+     * Gets all filter matches for a notification (for highlighting).
+     * Returns a list of FilterMatch objects containing match details.
+     */
+    fun getFilterMatches(notification: InterceptedNotification): List<FilterMatch> {
+        val filters = getRegexFilters(notification.packageName, notification.profileType)
+        val matches = mutableListOf<FilterMatch>()
+
+        // Check include patterns
+        val validIncludePatterns = filters.includePatterns.filter { it.pattern.isNotBlank() }
+        validIncludePatterns.forEach { pattern ->
+            findMatchInFields(pattern, notification.title, notification.text, true)?.let {
+                matches.add(it)
+            }
+        }
+
+        // Check exclude patterns
+        val validExcludePatterns = filters.excludePatterns.filter { it.pattern.isNotBlank() }
+        validExcludePatterns.forEach { pattern ->
+            findMatchInFields(pattern, notification.title, notification.text, false)?.let {
+                matches.add(it)
+            }
+        }
+
+        return matches
+    }
+
+    /**
+     * Finds the last (most recent) match in title or content.
+     * Returns the match details or null if no match.
+     */
+    private fun findMatchInFields(
+        pattern: FilterPattern,
+        title: String?,
+        text: String?,
+        isInclude: Boolean
+    ): FilterMatch? {
+        try {
+            val regex = Regex(pattern.pattern, RegexOption.IGNORE_CASE)
+
+            // Try to find match in content (prioritized over title for display)
+            if (pattern.matchContent && text != null) {
+                val match = regex.find(text)
+                if (match != null) {
+                    return FilterMatch(
+                        pattern = pattern,
+                        matchedText = match.value,
+                        startIndex = match.range.first,
+                        endIndex = match.range.last + 1,
+                        isInclude = isInclude
+                    )
+                }
+            }
+
+            // Try to find match in title
+            if (pattern.matchTitle && title != null) {
+                val match = regex.find(title)
+                if (match != null) {
+                    return FilterMatch(
+                        pattern = pattern,
+                        matchedText = match.value,
+                        startIndex = match.range.first,
+                        endIndex = match.range.last + 1,
+                        isInclude = isInclude
+                    )
+                }
+            }
+
+            return null
+        } catch (e: Exception) {
+            return null
+        }
     }
 
     /**
