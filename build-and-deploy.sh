@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Navigate to project root (must be first, before any file operations)
+cd "$(dirname "$0")"
+
 # Check for verbose flag
 VERBOSE=false
 if [[ "$1" == "--verbose" ]]; then
@@ -39,9 +42,6 @@ else
 
     GRADLE_CMD="./gradlew"
 fi
-
-# Navigate to project root
-cd "$(dirname "$0")"
 
 # Clean and build
 if [ "$VERBOSE" = true ]; then
