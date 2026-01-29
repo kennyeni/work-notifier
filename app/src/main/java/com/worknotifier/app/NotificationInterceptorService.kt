@@ -582,27 +582,55 @@ class NotificationInterceptorService : NotificationListenerService() {
         try {
             val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-            // Generate content hash for deduplication (packageName + profileType + title + text)
-            val contentHash = "$packageName|${profileType.name}|${NotificationStorage.getContentHash(title, text)}"
+            // ADAPTIVE DEDUPLICATION STRATEGY:
+            // Detect if this app uses MessagingStyle with threaded conversations
+            // vs sending separate notifications for each message
+
+            // Try to extract MessagingStyle early to detect conversation pattern
+            val originalMessagingStyle = originalNotification?.let { notif ->
+                try {
+                    NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notif)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+
+            // If MessagingStyle has 2+ messages, it's a threaded conversation (Option 1)
+            // The app updates one notification with full thread - use content dedup
+            // Otherwise, app sends separate notifications per message (Option 2) - no content dedup
+            val isThreadedConversation = originalMessagingStyle != null &&
+                                        originalMessagingStyle.messages.size > 1
+
+            Log.d(TAG, "Mimic strategy: app=$appName, threaded=$isThreadedConversation, " +
+                      "messages=${originalMessagingStyle?.messages?.size ?: 0}")
 
             // Atomically check and create mimic to prevent race conditions
             val mimicId = synchronized(mimicCreationLock) {
-                // Check if we already have a mimic for this exact content
-                val existingMimicId = contentToMimic[contentHash]
-                if (existingMimicId != null && originalNotificationKey != null) {
-                    // Already have a mimic with this exact content
-                    // Update tracking so this notification key can also dismiss the mimic (two-way dismissal)
-                    originalToMimic[originalNotificationKey] = existingMimicId
-                    mimicToOriginals.getOrPut(existingMimicId) { mutableSetOf() }.add(originalNotificationKey)
-                    Log.d(TAG, "Reusing existing mimic $existingMimicId for duplicate content, added key: $originalNotificationKey")
-                    return
+                // Only use content-based deduplication for threaded conversations
+                if (isThreadedConversation) {
+                    // Generate content hash for deduplication (packageName + profileType + title + text)
+                    val contentHash = "$packageName|${profileType.name}|${NotificationStorage.getContentHash(title, text)}"
+
+                    // Check if we already have a mimic for this exact content
+                    val existingMimicId = contentToMimic[contentHash]
+                    if (existingMimicId != null && originalNotificationKey != null) {
+                        // Already have a mimic for this threaded conversation
+                        // Update tracking so this notification key can also dismiss the mimic
+                        originalToMimic[originalNotificationKey] = existingMimicId
+                        mimicToOriginals.getOrPut(existingMimicId) { mutableSetOf() }.add(originalNotificationKey)
+                        Log.d(TAG, "Reusing existing mimic $existingMimicId for threaded conversation, added key: $originalNotificationKey")
+                        return
+                    }
                 }
 
                 // Get or create a unique notification ID for this mimic
                 val newMimicId = nextMimicId++
 
-                // Track the mimic by content hash to prevent duplicates
-                contentToMimic[contentHash] = newMimicId
+                // Track the mimic by content hash only for threaded conversations
+                if (isThreadedConversation) {
+                    val contentHash = "$packageName|${profileType.name}|${NotificationStorage.getContentHash(title, text)}"
+                    contentToMimic[contentHash] = newMimicId
+                }
 
                 newMimicId
             }
@@ -698,14 +726,7 @@ class NotificationInterceptorService : NotificationListenerService() {
                 it.remoteInputs != null && it.remoteInputs.isNotEmpty()
             }
 
-            // Try to extract existing MessagingStyle from original notification
-            val originalMessagingStyle = originalNotification?.let { notif ->
-                try {
-                    NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notif)
-                } catch (e: Exception) {
-                    null
-                }
-            }
+            // Note: originalMessagingStyle was already extracted earlier for deduplication logic
 
             // Create capability indicator text (appended to message)
             val capabilityIndicator = if (hasReplyAction) {

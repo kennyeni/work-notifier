@@ -25,14 +25,14 @@ The app uses `NotificationListenerService` to intercept notifications from:
 - Dark theme optimized interface
 - App icons and names (cross-profile icon support - Work/Private app icons displayed correctly)
 - Profile badges (orange "WORK", purple "PRIVATE") - now shows per profile instance
-- Last 100 notifications per app per profile (unique, deduplicated)
+- Last 100 notifications per app per profile (all unique messages preserved)
 - Pagination: Display 10 notifications at a time with "Load More" button
 - App ordering: Enabled apps first (mimic enabled), then alphabetically sorted
 - Expand/collapse for long notification text
 - Collapse/expand notifications per app to reduce clutter
 - Dismiss individual notifications or entire apps from history
 - Disable apps: Permanently hide apps from list via hamburger menu
-- Deduplication by notification key with improved validation
+- Deduplication by notification key only (preserves conversation threads and repeated messages)
 - Persistent notification history (survives app restart)
 
 ### Private Space Launcher Shortcuts
@@ -136,7 +136,11 @@ Creates launcher shortcuts for Private Space apps with:
 ### NotificationStorage.kt
 Persistent and in-memory storage with:
 - **Composite key**: Stores apps by "packageName|profileType" to differentiate same app across profiles
-- **Deduplication**: Enhanced validation - removes duplicates by notification key and rejects invalid entries
+- **Deduplication Strategy**: Only deduplicates by notification key (format: `USER_ID|PACKAGE_NAME|TAG|ID`)
+  - Each notification key is unique per Android's notification system
+  - If keys differ, they ARE different notifications (even if content is identical)
+  - Preserves conversation threads, repeated messages, and rapid-fire messaging
+  - No content-based deduplication (trusts Android's notification key assignment)
 - **Persistence**: Saves to SharedPreferences using Gson serialization, survives app restarts
 - **Maximum**: 100 unique notifications per app per profile
 - **Pagination**: UI displays 10 notifications at a time with "Load More" button
@@ -145,6 +149,45 @@ Persistent and in-memory storage with:
 - **Dismiss functionality**: Remove individual notifications or entire app instances
 - **Disable functionality**: Permanently hide apps from list (accessible via hamburger menu)
 - **Android Auto Only Mode**: Global preference to control mimic notification generation based on Android Auto connectivity
+
+### Mimic Notification Strategy (NotificationInterceptorService.kt)
+Adaptive deduplication for Android Auto compatibility with intelligent pattern detection.
+
+**Problem Solved:**
+Different messaging apps use different notification patterns. Some update a single notification with full conversation threads (e.g., WhatsApp, Signal), while others send separate notifications for each message (e.g., some Slack configurations, SMS apps).
+
+**Adaptive Detection:**
+The system automatically detects which pattern each app uses by examining the notification's `MessagingStyle`:
+
+1. **Threaded Conversations** (Option 1: MessagingStyle with 2+ messages)
+   - **Detection**: Notification contains MessagingStyle with 2+ messages
+   - **Behavior**: App updates ONE notification with full conversation thread
+   - **Example**: WhatsApp group chat with 5 messages in one notification
+   - **Mimic Strategy**: Content-based deduplication (reuse existing mimic)
+   - **Android Auto Display**: Shows full thread, updates as new messages arrive
+   - **Why**: Avoids creating duplicate mimics for same conversation
+
+2. **Separate Notifications** (Option 2: No MessagingStyle or single message)
+   - **Detection**: No MessagingStyle OR only 1 message in MessagingStyle
+   - **Behavior**: App sends NEW notification for each message
+   - **Example**: Slack sending individual notifications for each message
+   - **Mimic Strategy**: No content deduplication (create new mimic per notification)
+   - **Android Auto Display**: Shows each message individually
+   - **Why**: Ensures all messages appear, even if content is identical
+
+**Benefits:**
+- Automatically adapts per app and notification
+- Supports both messaging patterns correctly
+- Preserves conversation threads (threaded mode)
+- Preserves individual messages (separate mode)
+- Works with rapid-fire messages and repeated content
+- Debug logging shows detected pattern: `threaded=true/false`
+
+**Implementation Details:**
+- `createMimicNotification()` extracts MessagingStyle early (line ~590)
+- Counts messages to determine pattern: `isThreadedConversation = messages.size > 1`
+- Conditionally applies content hash tracking only for threaded conversations
+- Tracks mimic relationships for two-way dismissal (dismiss mimic → dismiss originals)
 
 ### AndroidAutoDetector.kt
 Utility for detecting Android Auto connection status.
@@ -237,7 +280,11 @@ GitHub Actions automatically builds on PR and push to main/master with:
 - Notification data is stored in-memory with persistent backup to SharedPreferences
 - Data persists across app restarts and device reboots
 - Each app+profile combination is tracked separately (e.g., WhatsApp Personal vs WhatsApp Work)
-- Enhanced duplicate detection validates notification keys and timestamps
+- Deduplication strategy:
+  - Storage: Only by notification key (preserves all legitimate messages)
+  - Mimics: Adaptive based on app's notification pattern (threaded vs separate)
+- Trusts Android's notification key assignment (different keys = different notifications)
+- Supports conversation threads, repeated messages, and rapid-fire messaging
 - Respects Android's profile isolation boundaries
 - Read-only access to notification data
 
@@ -253,7 +300,12 @@ GitHub Actions automatically builds on PR and push to main/master with:
 ### Storage Architecture
 - **In-Memory**: `ConcurrentHashMap` for thread-safe access
 - **Persistence**: SharedPreferences with Gson serialization (survives app/device restarts)
-- **Deduplication**: By notification key with validation for timestamps and content
+- **Deduplication**:
+  - **Storage**: By notification key only (no content-based deduplication)
+  - **Mimics**: Adaptive strategy based on MessagingStyle detection
+    - Threaded conversations (2+ messages): Content-based deduplication
+    - Separate notifications (0-1 messages): No content deduplication
+  - **Result**: All messages stored in history, mimics adapt to app's notification pattern
 - **Limits**: 100 notifications per app per profile, 10 displayed per page
 
 ### Cross-Profile Challenges
@@ -263,6 +315,7 @@ GitHub Actions automatically builds on PR and push to main/master with:
 
 ---
 
-**Last Updated**: 2026-01-28
+**Last Updated**: 2026-01-29
 **Android Version**: Android 15 (API 35)
 **Build System**: Gradle 8.2
+**Deduplication Strategy**: Key-based storage, adaptive mimic (threaded vs separate)

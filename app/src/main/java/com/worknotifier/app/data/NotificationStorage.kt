@@ -91,12 +91,11 @@ object NotificationStorage {
             mutableListOf()
         }
 
-        // Remove any existing notification with the same key OR same content
-        // This prevents duplicates even when apps use different keys for same content
-        appNotifications.removeAll {
-            it.key == notification.key ||
-            (it.title == notification.title && it.text == notification.text)
-        }
+        // Remove any existing notification with the same key
+        // Each notification key is unique (format: USER_ID|PACKAGE_NAME|TAG|ID)
+        // If Android assigns different keys, they ARE different notifications
+        // This handles system duplicates and notification updates
+        appNotifications.removeAll { it.key == notification.key }
 
         // Add the new notification at the beginning (without icon to save space)
         val notificationWithoutIcon = notification.copy(appIconBase64 = null)
