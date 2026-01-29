@@ -91,11 +91,17 @@ object NotificationStorage {
             mutableListOf()
         }
 
-        // Remove any existing notification with the same key OR same content
-        // This prevents duplicates even when apps use different keys for same content
+        // Remove any existing notification with the same key
+        // This prevents true duplicates from the system
+        appNotifications.removeAll { it.key == notification.key }
+
+        // Remove notifications with identical content posted within 1 second (true duplicates)
+        // This catches cases where apps post same notification with different keys
+        // but doesn't filter out legitimate repeated messages (e.g., Slack conversations)
         appNotifications.removeAll {
-            it.key == notification.key ||
-            (it.title == notification.title && it.text == notification.text)
+            it.title == notification.title &&
+            it.text == notification.text &&
+            Math.abs(it.timestamp - notification.timestamp) < 1000
         }
 
         // Add the new notification at the beginning (without icon to save space)
