@@ -7,16 +7,36 @@ if [[ "$1" == "--verbose" ]]; then
     VERBOSE=true
 fi
 
-# Detect OS
+# Detect OS and clean build-tools
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" || "$OSTYPE" == "cygwin" ]]; then
     IS_WINDOWS=true
     cp ./local.properties.windows ./local.properties
-    rmdir /s /q C:\Users\Kenny\AppData\Local\Android\Sdk\build-tools\
+
+    # Windows: Delete build-tools to force fresh SDK install
+    SDK_PATH="$LOCALAPPDATA/Android/Sdk"
+    BUILD_TOOLS="$SDK_PATH/build-tools"
+    if [[ -d "$BUILD_TOOLS" ]]; then
+        cmd //c "rmdir /s /q \"$BUILD_TOOLS\""
+    fi
+
     GRADLE_CMD="./gradlew.bat"
 else
     IS_WINDOWS=false
     cp ./local.properties.linux ./local.properties
-    rm -rf /mnt/c/Users/Kenny/AppData/Local/Android/Sdk/build-tools
+
+    # Linux/WSL: Delete build-tools to force fresh SDK install
+    if [[ -d "/mnt/c/Users/$USER/AppData/Local/Android/Sdk" ]]; then
+        # WSL accessing Windows SDK
+        SDK_PATH="/mnt/c/Users/$USER/AppData/Local/Android/Sdk"
+    else
+        # Native Linux
+        SDK_PATH="$HOME/Android/Sdk"
+    fi
+    BUILD_TOOLS="$SDK_PATH/build-tools"
+    if [[ -d "$BUILD_TOOLS" ]]; then
+        rm -rf "$BUILD_TOOLS"
+    fi
+
     GRADLE_CMD="./gradlew"
 fi
 
