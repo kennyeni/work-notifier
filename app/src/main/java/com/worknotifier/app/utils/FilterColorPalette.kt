@@ -34,10 +34,8 @@ object FilterColorPalette {
      * @return ARGB color value
      */
     fun getColorForIndex(colorIndex: Int): Long {
-    fun getColorForIndex(colorIndex: Int): Long {
         val index = if (colorIndex >= 0) colorIndex % colors.size else 0
         return colors[index]
-    }
     }
 
     /**
