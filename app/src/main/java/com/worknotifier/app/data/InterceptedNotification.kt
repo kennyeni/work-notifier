@@ -10,6 +10,17 @@ enum class ProfileType {
 }
 
 /**
+ * Represents a single regex filter pattern with color and field matching options.
+ * Supports matching against notification title, content, or both.
+ */
+data class FilterPattern(
+    val pattern: String = "",
+    val colorIndex: Int = 0,  // 0-14, cycles through color palette
+    val matchTitle: Boolean = true,
+    val matchContent: Boolean = true
+)
+
+/**
  * Data class representing an intercepted notification.
  */
 data class InterceptedNotification(

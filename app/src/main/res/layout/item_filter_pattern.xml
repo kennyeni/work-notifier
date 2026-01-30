@@ -3,36 +3,78 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
-    android:paddingTop="4dp"
-    android:paddingBottom="4dp">
+    android:orientation="vertical"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
 
-    <EditText
-        android:id="@+id/etPattern"
-        android:layout_width="0dp"
+    <!-- Pattern input row -->
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:hint="@string/pattern_hint"
-        android:textSize="12sp"
-        android:inputType="text"
-        android:background="@drawable/edit_text_background"
-        android:padding="8dp"
-        android:textColor="@color/text_primary"
-        android:textColorHint="@color/text_tertiary"
-        tools:ignore="Autofill" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
 
-    <Button
-        android:id="@+id/btnRemovePattern"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
-        android:layout_width="wrap_content"
+        <!-- Color indicator square -->
+        <View
+            android:id="@+id/vColorIndicator"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:background="@color/teal_200"
+            android:layout_marginEnd="8dp" />
+
+        <!-- Pattern input -->
+        <EditText
+            android:id="@+id/etPattern"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="@string/pattern_hint"
+            android:textSize="12sp"
+            android:inputType="text"
+            android:background="@drawable/edit_text_background"
+            android:padding="8dp"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_tertiary"
+            tools:ignore="Autofill" />
+
+        <!-- Remove button -->
+        <Button
+            android:id="@+id/btnRemovePattern"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/remove_pattern"
+            android:textSize="10sp"
+            android:minHeight="0dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:layout_marginStart="4dp"
+            android:textColor="@color/error" />
+    </LinearLayout>
+
+    <!-- Title/Content matching options -->
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/remove_pattern"
-        android:textSize="10sp"
-        android:minHeight="0dp"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
-        android:layout_marginStart="4dp"
-        android:textColor="@color/error" />
+        android:orientation="horizontal"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical">
+
+        <CheckBox
+            android:id="@+id/cbMatchTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/match_title"
+            android:textSize="11sp"
+            android:layout_marginEnd="16dp" />
+
+        <CheckBox
+            android:id="@+id/cbMatchContent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/match_content"
+            android:textSize="11sp" />
+    </LinearLayout>
 
 </LinearLayout>

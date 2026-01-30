@@ -31,6 +31,11 @@ import com.worknotifier.app.data.InterceptedNotification
 import com.worknotifier.app.data.NotificationStorage
 import com.worknotifier.app.data.ProfileType
 import com.worknotifier.app.data.RegexFilters
+import com.worknotifier.app.data.FilterPattern
+import com.worknotifier.app.data.MatchFieldType
+import com.worknotifier.app.utils.FilterColorPalette
+import android.text.SpannableString
+import android.text.style.BackgroundColorSpan
 
 /**
  * Activity that displays all intercepted apps and their recent notifications.
@@ -197,7 +202,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
             private val btnAddIncludePattern: Button = itemView.findViewById(R.id.btnAddIncludePattern)
             private val btnAddExcludePattern: Button = itemView.findViewById(R.id.btnAddExcludePattern)
 
-            private var isExpanded = true
+            private var isExpanded = false  // Default to collapsed
             private var isFiltersExpanded = false
             private var visibleNotificationCount = 10 // Show 10 notifications initially
             private val debounceHandler = Handler(Looper.getMainLooper())
@@ -362,9 +367,43 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     val btnMimicNotification: Button = notificationView.findViewById(R.id.btnMimicNotification)
                     val btnDismissNotification: Button = notificationView.findViewById(R.id.btnDismissNotification)
 
-                    tvTitle.text = notification.title ?: context.getString(R.string.no_title)
-                    val notificationText = notification.text ?: context.getString(R.string.no_content)
+                    // Get filter matches for highlighting
+                    val filterMatches = NotificationStorage.getFilterMatches(notification)
+
+                    // Set title with highlighting if there's a match in title
+                    val titleMatch = filterMatches.firstOrNull { it.fieldType == MatchFieldType.TITLE }
+
+                    if (titleMatch != null && notification.title != null && titleMatch.startIndex >= 0 && titleMatch.endIndex <= notification.title.length) {
+                        val titleSpan = SpannableString(notification.title)
+                        titleSpan.setSpan(
+                            BackgroundColorSpan(FilterColorPalette.getBackgroundColorWithAlpha(titleMatch.pattern.colorIndex)),
+                            titleMatch.startIndex,
+                            titleMatch.endIndex,
+                            SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                        tvTitle.text = titleSpan
+                    } else {
+                        tvTitle.text = notification.title ?: context.getString(R.string.no_title)
+                    }
+
                     tvTime.text = InterceptedNotification.formatTimestamp(notification.timestamp)
+
+                    // Set text with highlighting if there's a match in content
+                    val contentMatch = filterMatches.firstOrNull { it.fieldType == MatchFieldType.CONTENT }
+                    val notificationText = notification.text ?: context.getString(R.string.no_content)
+
+                    if (contentMatch != null && notification.text != null && contentMatch.startIndex >= 0 && contentMatch.endIndex <= notification.text.length) {
+                        val textSpan = SpannableString(notification.text)
+                        textSpan.setSpan(
+                            BackgroundColorSpan(FilterColorPalette.getBackgroundColorWithAlpha(contentMatch.pattern.colorIndex)),
+                            contentMatch.startIndex,
+                            contentMatch.endIndex,
+                            SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                        tvText.text = textSpan
+                    } else {
+                        tvText.text = notificationText
+                    }
 
                     // Apply visual indicator based on filter match
                     val matchesFilters = NotificationStorage.matchesFilters(notification)
@@ -461,49 +500,61 @@ class InterceptedAppsActivity : AppCompatActivity() {
                 llExcludePatterns.removeAllViews()
 
                 // Populate include patterns
-                filters.includePatterns.forEach { pattern ->
-                    addFilterPatternView(context, packageName, profileType, pattern, true, notifications)
+                filters.includePatterns.forEachIndexed { index, pattern ->
+                    addFilterPatternView(context, packageName, profileType, pattern, true, notifications, index)
                 }
 
                 // Populate exclude patterns
-                filters.excludePatterns.forEach { pattern ->
-                    addFilterPatternView(context, packageName, profileType, pattern, false, notifications)
+                filters.excludePatterns.forEachIndexed { index, pattern ->
+                    addFilterPatternView(context, packageName, profileType, pattern, false, notifications, index)
                 }
 
                 // Set up add pattern buttons
                 btnAddIncludePattern.setOnClickListener {
-                    val newPattern = ""
+                    val newPattern = FilterPattern(pattern = "", colorIndex = filters.includePatterns.size)
                     filters.includePatterns.add(newPattern)
                     NotificationStorage.setRegexFilters(packageName, profileType, filters)
-                    addFilterPatternView(context, packageName, profileType, newPattern, true, notifications)
+                    addFilterPatternView(context, packageName, profileType, newPattern, true, notifications, filters.includePatterns.size - 1)
                 }
 
                 btnAddExcludePattern.setOnClickListener {
-                    val newPattern = ""
+                    val newPattern = FilterPattern(pattern = "", colorIndex = filters.excludePatterns.size)
                     filters.excludePatterns.add(newPattern)
                     NotificationStorage.setRegexFilters(packageName, profileType, filters)
-                    addFilterPatternView(context, packageName, profileType, newPattern, false, notifications)
+                    addFilterPatternView(context, packageName, profileType, newPattern, false, notifications, filters.excludePatterns.size - 1)
                 }
             }
 
             /**
-             * Adds a filter pattern view (EditText with remove button).
+             * Adds a filter pattern view (EditText with remove button and color indicator).
              */
             private fun addFilterPatternView(
                 context: Context,
                 packageName: String,
                 profileType: ProfileType,
-                pattern: String,
+                filterPattern: FilterPattern,
                 isInclude: Boolean,
-                notifications: List<InterceptedNotification>
+                notifications: List<InterceptedNotification>,
+                patternIndex: Int
             ) {
                 val patternView = LayoutInflater.from(context)
                     .inflate(R.layout.item_filter_pattern, null, false)
 
+                val vColorIndicator: View = patternView.findViewById(R.id.vColorIndicator)
                 val etPattern: android.widget.EditText = patternView.findViewById(R.id.etPattern)
+                val cbMatchTitle: CheckBox = patternView.findViewById(R.id.cbMatchTitle)
+                val cbMatchContent: CheckBox = patternView.findViewById(R.id.cbMatchContent)
                 val btnRemove: Button = patternView.findViewById(R.id.btnRemovePattern)
 
-                etPattern.setText(pattern)
+                // Set color indicator
+                vColorIndicator.setBackgroundColor(FilterColorPalette.getFullOpaqueColor(filterPattern.colorIndex))
+
+                // Set pattern text
+                etPattern.setText(filterPattern.pattern)
+
+                // Set checkbox states
+                cbMatchTitle.isChecked = filterPattern.matchTitle
+                cbMatchContent.isChecked = filterPattern.matchContent
 
                 // Save pattern when text changes (with debouncing to reduce disk writes)
                 var saveRunnable: Runnable? = null
@@ -516,7 +567,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
 
                         // Schedule new save after delay
                         saveRunnable = Runnable {
-                            val filters = NotificationStorage.getRegexFilters(packageName, profileType)
+                            // Dynamically find current index - fixes issue when patterns are removed from list
                             val index = if (isInclude) {
                                 llIncludePatterns.indexOfChild(patternView)
                             } else {
@@ -524,25 +575,47 @@ class InterceptedAppsActivity : AppCompatActivity() {
                             }
 
                             if (index >= 0) {
-                                val newPattern = s.toString()
-                                if (isInclude && index < filters.includePatterns.size) {
-                                    filters.includePatterns[index] = newPattern
-                                } else if (!isInclude && index < filters.excludePatterns.size) {
-                                    filters.excludePatterns[index] = newPattern
+                                val filters = NotificationStorage.getRegexFilters(packageName, profileType)
+                                val list = if (isInclude) filters.includePatterns else filters.excludePatterns
+                                if (index < list.size) {
+                                    list[index] = list[index].copy(pattern = s.toString())
+                                    NotificationStorage.setRegexFilters(packageName, profileType, filters)
+                                    // Update notification visual indicators
+                                    updateNotificationVisuals(notifications)
                                 }
-                                NotificationStorage.setRegexFilters(packageName, profileType, filters)
-
-                                // Update notification visual indicators
-                                updateNotificationVisuals(notifications)
                             }
                         }
                         debounceHandler.postDelayed(saveRunnable!!, debounceDelay)
                     }
                 })
 
+                // Save when checkboxes change
+                cbMatchTitle.setOnCheckedChangeListener { _, _ ->
+                    // Dynamically find current index
+                    val index = if (isInclude) {
+                        llIncludePatterns.indexOfChild(patternView)
+                    } else {
+                        llExcludePatterns.indexOfChild(patternView)
+                    }
+                    if (index >= 0) {
+                        saveCheckboxState(context, packageName, profileType, index, isInclude, notifications, cbMatchTitle, cbMatchContent)
+                    }
+                }
+                cbMatchContent.setOnCheckedChangeListener { _, _ ->
+                    // Dynamically find current index
+                    val index = if (isInclude) {
+                        llIncludePatterns.indexOfChild(patternView)
+                    } else {
+                        llExcludePatterns.indexOfChild(patternView)
+                    }
+                    if (index >= 0) {
+                        saveCheckboxState(context, packageName, profileType, index, isInclude, notifications, cbMatchTitle, cbMatchContent)
+                    }
+                }
+
                 // Remove pattern
                 btnRemove.setOnClickListener {
-                    val filters = NotificationStorage.getRegexFilters(packageName, profileType)
+                    // Dynamically find current index
                     val index = if (isInclude) {
                         llIncludePatterns.indexOfChild(patternView)
                     } else {
@@ -550,22 +623,22 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     }
 
                     if (index >= 0) {
-                        if (isInclude && index < filters.includePatterns.size) {
-                            filters.includePatterns.removeAt(index)
-                        } else if (!isInclude && index < filters.excludePatterns.size) {
-                            filters.excludePatterns.removeAt(index)
+                        val filters = NotificationStorage.getRegexFilters(packageName, profileType)
+                        val list = if (isInclude) filters.includePatterns else filters.excludePatterns
+                        if (index < list.size) {
+                            list.removeAt(index)
+                            NotificationStorage.setRegexFilters(packageName, profileType, filters)
                         }
-                        NotificationStorage.setRegexFilters(packageName, profileType, filters)
-
-                        if (isInclude) {
-                            llIncludePatterns.removeView(patternView)
-                        } else {
-                            llExcludePatterns.removeView(patternView)
-                        }
-
-                        // Update notification visual indicators
-                        updateNotificationVisuals(notifications)
                     }
+
+                    if (isInclude) {
+                        llIncludePatterns.removeView(patternView)
+                    } else {
+                        llExcludePatterns.removeView(patternView)
+                    }
+
+                    // Update notification visual indicators
+                    updateNotificationVisuals(notifications)
                 }
 
                 // Add to appropriate container
@@ -577,16 +650,86 @@ class InterceptedAppsActivity : AppCompatActivity() {
             }
 
             /**
+             * Saves checkbox state changes to storage.
+             */
+            private fun saveCheckboxState(
+                context: Context,
+                packageName: String,
+                profileType: ProfileType,
+                patternIndex: Int,
+                isInclude: Boolean,
+                notifications: List<InterceptedNotification>,
+                cbMatchTitle: CheckBox,
+                cbMatchContent: CheckBox
+            ) {
+                // Prevent unchecking both boxes
+                if (!cbMatchTitle.isChecked && !cbMatchContent.isChecked) {
+                    cbMatchContent.isChecked = true // Default to matching content
+                    return
+                }
+
+                val filters = NotificationStorage.getRegexFilters(packageName, profileType)
+                val list = if (isInclude) filters.includePatterns else filters.excludePatterns
+                if (patternIndex < list.size) {
+                    list[patternIndex] = list[patternIndex].copy(
+                        matchTitle = cbMatchTitle.isChecked,
+                        matchContent = cbMatchContent.isChecked
+                    )
+                    NotificationStorage.setRegexFilters(packageName, profileType, filters)
+                    updateNotificationVisuals(notifications)
+                }
+            }
+
+            /**
              * Updates notification visual indicators based on filter matches.
+             * This is called whenever filters change to refresh the UI.
              */
             private fun updateNotificationVisuals(notifications: List<InterceptedNotification>) {
-                // Update the alpha of each notification view based on filter match
-                for (i in 0 until llNotifications.childCount) {
+                // Update each notification view based on filter match
+                for (i in 0 until minOf(llNotifications.childCount, notifications.size)) {
                     val notificationView = llNotifications.getChildAt(i)
                     if (i < notifications.size) {
                         val notification = notifications[i]
                         val matchesFilters = NotificationStorage.matchesFilters(notification)
                         notificationView.alpha = if (matchesFilters) 1.0f else 0.35f
+
+                        // Update highlighting
+                        val tvText: TextView? = notificationView.findViewById(R.id.tvNotificationText)
+                        val tvTitle: TextView? = notificationView.findViewById(R.id.tvNotificationTitle)
+
+                        val filterMatches = NotificationStorage.getFilterMatches(notification)
+                        val contentMatch = filterMatches.firstOrNull { it.fieldType == MatchFieldType.CONTENT }
+                        val titleMatch = filterMatches.firstOrNull { it.fieldType == MatchFieldType.TITLE }
+
+                        if (tvText != null) {
+                            if (contentMatch != null && notification.text != null && contentMatch.startIndex >= 0 && contentMatch.endIndex <= notification.text.length) {
+                                val textSpan = SpannableString(notification.text)
+                                textSpan.setSpan(
+                                    BackgroundColorSpan(FilterColorPalette.getBackgroundColorWithAlpha(contentMatch.pattern.colorIndex)),
+                                    contentMatch.startIndex,
+                                    contentMatch.endIndex,
+                                    SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE
+                                )
+                                tvText.text = textSpan
+                            } else {
+                                tvText.text = notification.text ?: ""
+                            }
+                        }
+
+                        if (tvTitle != null) {
+                            if (titleMatch != null && notification.title != null && titleMatch.startIndex >= 0 && titleMatch.endIndex <= notification.title.length) {
+                                val titleSpan = SpannableString(notification.title)
+                                titleSpan.setSpan(
+                                    BackgroundColorSpan(FilterColorPalette.getBackgroundColorWithAlpha(titleMatch.pattern.colorIndex)),
+                                    titleMatch.startIndex,
+                                    titleMatch.endIndex,
+                                    SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE
+                                )
+                                tvTitle.text = titleSpan
+                            } else {
+                                tvTitle.text = notification.title ?: ""
+                            }
+                        }
                     }
                 }
             }
