@@ -32,6 +32,7 @@ import com.worknotifier.app.data.NotificationStorage
 import com.worknotifier.app.data.ProfileType
 import com.worknotifier.app.data.RegexFilters
 import com.worknotifier.app.data.FilterPattern
+import com.worknotifier.app.data.MatchFieldType
 import com.worknotifier.app.utils.FilterColorPalette
 import android.text.SpannableString
 import android.text.style.BackgroundColorSpan
@@ -370,11 +371,9 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     val filterMatches = NotificationStorage.getFilterMatches(notification)
 
                     // Set title with highlighting if there's a match in title
-                    val titleMatch = filterMatches.firstOrNull { it.startIndex >= 0 && notification.title?.let { t ->
-                        it.startIndex <= t.length && it.endIndex <= t.length
-                    } == true }
+                    val titleMatch = filterMatches.firstOrNull { it.fieldType == MatchFieldType.TITLE }
 
-                    if (titleMatch != null && notification.title != null) {
+                    if (titleMatch != null && notification.title != null && titleMatch.startIndex >= 0 && titleMatch.endIndex <= notification.title.length) {
                         val titleSpan = SpannableString(notification.title)
                         titleSpan.setSpan(
                             BackgroundColorSpan(FilterColorPalette.getBackgroundColorWithAlpha(titleMatch.pattern.colorIndex)),
@@ -390,10 +389,10 @@ class InterceptedAppsActivity : AppCompatActivity() {
                     tvTime.text = InterceptedNotification.formatTimestamp(notification.timestamp)
 
                     // Set text with highlighting if there's a match in content
-                    val contentMatch = filterMatches.firstOrNull()
+                    val contentMatch = filterMatches.firstOrNull { it.fieldType == MatchFieldType.CONTENT }
                     val notificationText = notification.text ?: context.getString(R.string.no_content)
 
-                    if (contentMatch != null && notification.text != null) {
+                    if (contentMatch != null && notification.text != null && contentMatch.startIndex >= 0 && contentMatch.endIndex <= notification.text.length) {
                         val textSpan = SpannableString(notification.text)
                         textSpan.setSpan(
                             BackgroundColorSpan(FilterColorPalette.getBackgroundColorWithAlpha(contentMatch.pattern.colorIndex)),
@@ -568,13 +567,22 @@ class InterceptedAppsActivity : AppCompatActivity() {
 
                         // Schedule new save after delay
                         saveRunnable = Runnable {
-                            val filters = NotificationStorage.getRegexFilters(packageName, profileType)
-                            val list = if (isInclude) filters.includePatterns else filters.excludePatterns
-                            if (patternIndex < list.size) {
-                                list[patternIndex] = list[patternIndex].copy(pattern = s.toString())
-                                NotificationStorage.setRegexFilters(packageName, profileType, filters)
-                                // Update notification visual indicators
-                                updateNotificationVisuals(notifications)
+                            // Dynamically find current index - fixes issue when patterns are removed from list
+                            val index = if (isInclude) {
+                                llIncludePatterns.indexOfChild(patternView)
+                            } else {
+                                llExcludePatterns.indexOfChild(patternView)
+                            }
+
+                            if (index >= 0) {
+                                val filters = NotificationStorage.getRegexFilters(packageName, profileType)
+                                val list = if (isInclude) filters.includePatterns else filters.excludePatterns
+                                if (index < list.size) {
+                                    list[index] = list[index].copy(pattern = s.toString())
+                                    NotificationStorage.setRegexFilters(packageName, profileType, filters)
+                                    // Update notification visual indicators
+                                    updateNotificationVisuals(notifications)
+                                }
                             }
                         }
                         debounceHandler.postDelayed(saveRunnable!!, debounceDelay)
@@ -583,19 +591,44 @@ class InterceptedAppsActivity : AppCompatActivity() {
 
                 // Save when checkboxes change
                 cbMatchTitle.setOnCheckedChangeListener { _, _ ->
-                    saveCheckboxState(context, packageName, profileType, patternIndex, isInclude, notifications, cbMatchTitle, cbMatchContent)
+                    // Dynamically find current index
+                    val index = if (isInclude) {
+                        llIncludePatterns.indexOfChild(patternView)
+                    } else {
+                        llExcludePatterns.indexOfChild(patternView)
+                    }
+                    if (index >= 0) {
+                        saveCheckboxState(context, packageName, profileType, index, isInclude, notifications, cbMatchTitle, cbMatchContent)
+                    }
                 }
                 cbMatchContent.setOnCheckedChangeListener { _, _ ->
-                    saveCheckboxState(context, packageName, profileType, patternIndex, isInclude, notifications, cbMatchTitle, cbMatchContent)
+                    // Dynamically find current index
+                    val index = if (isInclude) {
+                        llIncludePatterns.indexOfChild(patternView)
+                    } else {
+                        llExcludePatterns.indexOfChild(patternView)
+                    }
+                    if (index >= 0) {
+                        saveCheckboxState(context, packageName, profileType, index, isInclude, notifications, cbMatchTitle, cbMatchContent)
+                    }
                 }
 
                 // Remove pattern
                 btnRemove.setOnClickListener {
-                    val filters = NotificationStorage.getRegexFilters(packageName, profileType)
-                    val list = if (isInclude) filters.includePatterns else filters.excludePatterns
-                    if (patternIndex < list.size) {
-                        list.removeAt(patternIndex)
-                        NotificationStorage.setRegexFilters(packageName, profileType, filters)
+                    // Dynamically find current index
+                    val index = if (isInclude) {
+                        llIncludePatterns.indexOfChild(patternView)
+                    } else {
+                        llExcludePatterns.indexOfChild(patternView)
+                    }
+
+                    if (index >= 0) {
+                        val filters = NotificationStorage.getRegexFilters(packageName, profileType)
+                        val list = if (isInclude) filters.includePatterns else filters.excludePatterns
+                        if (index < list.size) {
+                            list.removeAt(index)
+                            NotificationStorage.setRegexFilters(packageName, profileType, filters)
+                        }
                     }
 
                     if (isInclude) {
@@ -664,11 +697,12 @@ class InterceptedAppsActivity : AppCompatActivity() {
                         val tvText: TextView? = notificationView.findViewById(R.id.tvNotificationText)
                         val tvTitle: TextView? = notificationView.findViewById(R.id.tvNotificationTitle)
 
-                        if (tvText != null) {
-                            val filterMatches = NotificationStorage.getFilterMatches(notification)
-                            val contentMatch = filterMatches.firstOrNull()
+                        val filterMatches = NotificationStorage.getFilterMatches(notification)
+                        val contentMatch = filterMatches.firstOrNull { it.fieldType == MatchFieldType.CONTENT }
+                        val titleMatch = filterMatches.firstOrNull { it.fieldType == MatchFieldType.TITLE }
 
-                            if (contentMatch != null && notification.text != null) {
+                        if (tvText != null) {
+                            if (contentMatch != null && notification.text != null && contentMatch.startIndex >= 0 && contentMatch.endIndex <= notification.text.length) {
                                 val textSpan = SpannableString(notification.text)
                                 textSpan.setSpan(
                                     BackgroundColorSpan(FilterColorPalette.getBackgroundColorWithAlpha(contentMatch.pattern.colorIndex)),
@@ -683,12 +717,7 @@ class InterceptedAppsActivity : AppCompatActivity() {
                         }
 
                         if (tvTitle != null) {
-                            val filterMatches = NotificationStorage.getFilterMatches(notification)
-                            val titleMatch = filterMatches.firstOrNull { it.startIndex >= 0 && notification.title?.let { t ->
-                                it.startIndex <= t.length && it.endIndex <= t.length
-                            } == true }
-
-                            if (titleMatch != null && notification.title != null) {
+                            if (titleMatch != null && notification.title != null && titleMatch.startIndex >= 0 && titleMatch.endIndex <= notification.title.length) {
                                 val titleSpan = SpannableString(notification.title)
                                 titleSpan.setSpan(
                                     BackgroundColorSpan(FilterColorPalette.getBackgroundColorWithAlpha(titleMatch.pattern.colorIndex)),

@@ -17,6 +17,13 @@ data class RegexFilters(
 )
 
 /**
+ * Enum for which field the filter match was found in.
+ */
+enum class MatchFieldType {
+    TITLE, CONTENT
+}
+
+/**
  * Represents match information for a filter pattern.
  */
 data class FilterMatch(
@@ -24,7 +31,8 @@ data class FilterMatch(
     val matchedText: String,
     val startIndex: Int,
     val endIndex: Int,
-    val isInclude: Boolean
+    val isInclude: Boolean,
+    val fieldType: MatchFieldType
 )
 
 /**
@@ -394,6 +402,7 @@ object NotificationStorage {
     /**
      * Finds the last (most recent) match in title or content.
      * Returns the match details or null if no match.
+     * Prioritizes content matches over title matches.
      */
     private fun findMatchInFields(
         pattern: FilterPattern,
@@ -413,7 +422,8 @@ object NotificationStorage {
                         matchedText = match.value,
                         startIndex = match.range.first,
                         endIndex = match.range.last + 1,
-                        isInclude = isInclude
+                        isInclude = isInclude,
+                        fieldType = MatchFieldType.CONTENT
                     )
                 }
             }
@@ -427,7 +437,8 @@ object NotificationStorage {
                         matchedText = match.value,
                         startIndex = match.range.first,
                         endIndex = match.range.last + 1,
-                        isInclude = isInclude
+                        isInclude = isInclude,
+                        fieldType = MatchFieldType.TITLE
                     )
                 }
             }
