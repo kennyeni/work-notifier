@@ -50,6 +50,8 @@
     <string name="add_exclude_pattern">+ Add Exclude Pattern</string>
     <string name="pattern_hint">Enter regex pattern</string>
     <string name="remove_pattern">Remove</string>
+    <string name="match_title">Title</string>
+    <string name="match_content">Content</string>
 
     <!-- Android Auto Settings -->
     <string name="android_auto_only_mode">Android Auto Only Mode</string>
