@@ -947,7 +947,6 @@ class NotificationInterceptorService : NotificationListenerService() {
             notificationManager.notify(mimicId, builtNotification)
 
             Log.d(TAG, "Mimic notification created with MessagingStyle: ID=$mimicId, App=$appName, isManual=${originalNotificationKey == null}")
-            Log.d(TAG, "Mimic notification extras - hasMessagingStyle: ${builtNotification.extras.containsKey(Notification.EXTRA_MESSAGING_STYLE_USER)}")
         } catch (e: Exception) {
             Log.e(TAG, "Error creating mimic notification", e)
 
