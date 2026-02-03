@@ -770,6 +770,9 @@ class NotificationInterceptorService : NotificationListenerService() {
                     newStyle.setConversationTitle(it)
                 }
 
+                // CRITICAL: Inherit isGroupConversation from original (required for Android Auto)
+                newStyle.setGroupConversation(originalMessagingStyle.isGroupConversation)
+
                 if (messages.isNotEmpty()) {
                     // Add all messages except the last one
                     messages.dropLast(1).forEach { msg ->
