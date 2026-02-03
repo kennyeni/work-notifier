@@ -309,6 +309,7 @@ object AutoModeManager {
         context?.let { ctx ->
             // Use NotificationInterceptorService to create mimic notification
             ctx.sendBroadcast(android.content.Intent("com.worknotifier.app.AUTO_MODE_SUCCESS").apply {
+                setPackage(ctx.packageName)
                 putExtra("message", message)
             })
             Log.d(TAG, "Success notification requested: $message")
@@ -322,6 +323,7 @@ object AutoModeManager {
         context?.let { ctx ->
             // Use NotificationInterceptorService to create mimic notification
             ctx.sendBroadcast(android.content.Intent("com.worknotifier.app.AUTO_MODE_ERROR").apply {
+                setPackage(ctx.packageName)
                 putExtra("message", message)
             })
             Log.d(TAG, "Error notification requested: $message")
