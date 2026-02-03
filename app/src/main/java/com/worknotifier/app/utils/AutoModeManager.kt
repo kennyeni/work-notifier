@@ -42,6 +42,7 @@ object AutoModeManager {
     private var prefs: SharedPreferences? = null
     private var isConnectedToAuto = false
     private var observer: Observer<Int>? = null
+    private var carConnection: CarConnection? = null
 
     /**
      * Initialize the AutoModeManager with application context.
@@ -53,11 +54,11 @@ object AutoModeManager {
         prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         // Observe Android Auto connection changes
-        val carConnection = CarConnection(appContext)
+        carConnection = CarConnection(appContext)
         observer = Observer<Int> { connectionType ->
             handleConnectionChange(connectionType)
         }
-        observer?.let { carConnection.type.observeForever(it) }
+        observer?.let { carConnection?.type?.observeForever(it) }
 
         Log.d(TAG, "AutoModeManager initialized")
     }
@@ -353,7 +354,7 @@ object AutoModeManager {
                     Log.d(TAG, "Granting WRITE_SECURE_SETTINGS via root...")
                     val grantResult = RootUtils.executeRootCommand(grantCommand)
 
-                    if (grantResult.isNotEmpty() && grantResult.any { it.contains("error", ignoreCase = true) }) {
+                    if (!grantResult.isNullOrEmpty() && grantResult.contains("error", ignoreCase = true)) {
                         Log.e(TAG, "Error granting permission: $grantResult")
                         hasErrors = true
                         results.add("Failed to grant WRITE_SECURE_SETTINGS")
