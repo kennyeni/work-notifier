@@ -58,6 +58,23 @@ The app uses `NotificationListenerService` to intercept notifications from:
 - Supports both Android Auto (projection) and Android Automotive OS (native)
 - No special permissions required for detection
 
+### DND and Bedtime Mode Management
+- Automatically manages Do Not Disturb (DND) and Bedtime mode when connecting to Android Auto
+- **When connecting to Android Auto**:
+  - Detects if DND is active, saves state, and disables it
+  - Detects if Bedtime mode is active, saves state, and disables it
+  - Creates a mimic notification confirming which modes were disabled
+- **When disconnecting from Android Auto**:
+  - Restores DND if it was previously active
+  - Restores Bedtime mode if it was previously active
+  - Creates a mimic notification confirming which modes were restored
+- Fully automatic operation (no user toggles required)
+- Requires permissions:
+  - `ACCESS_NOTIFICATION_POLICY` for DND control (auto-granted)
+  - `WRITE_SECURE_SETTINGS` for Bedtime mode control (grant via ADB: `adb shell pm grant com.worknotifier.app android.permission.WRITE_SECURE_SETTINGS`)
+- Uses official NotificationManager API for DND
+- Uses Settings.Secure API for Bedtime mode (Pixel-specific feature)
+
 ## Project Structure
 
 ```
@@ -76,6 +93,7 @@ work-notifier/
 │   │   │   └── NotificationStorage.kt        # Persistent and in-memory storage
 │   │   └── utils/
 │   │       ├── AndroidAutoDetector.kt        # Android Auto detection utility
+│   │       ├── AutoModeManager.kt            # DND and Bedtime mode management
 │   │       └── RootUtils.kt                  # Optional root features
 │   └── build.gradle
 ├── build_jks.gradle          # Deterministic keystore generation
@@ -210,6 +228,42 @@ Utility for detecting Android Auto connection status.
 - `getConnectionType()`: Get current connection type code
 - `getConnectionStatusString()`: Get human-readable status
 
+### AutoModeManager.kt
+Manages DND and Bedtime mode state when connecting/disconnecting from Android Auto.
+
+**Key Features:**
+- Automatic operation with no user interaction required
+- Observes Android Auto connection state via `CarConnection` API
+- Saves mode states before disabling them
+- Restores modes to previous state on disconnect
+- Creates mimic notifications for user feedback
+- Thread-safe singleton implementation
+- Gracefully handles permission failures
+
+**Behavior:**
+- **On Android Auto Connect**:
+  - Checks if DND is active and saves state
+  - Checks if Bedtime mode is active and saves state
+  - Disables both modes to ensure notifications work
+  - Creates success notification listing disabled modes
+- **On Android Auto Disconnect**:
+  - Restores DND if it was previously active
+  - Restores Bedtime mode if it was previously active
+  - Creates success notification listing restored modes
+  - Clears saved state
+
+**Permissions:**
+- `ACCESS_NOTIFICATION_POLICY`: For DND control (auto-granted, user must enable in Settings)
+- `WRITE_SECURE_SETTINGS`: For Bedtime mode control (grant via ADB)
+  - Grant command: `adb shell pm grant com.worknotifier.app android.permission.WRITE_SECURE_SETTINGS`
+
+**Implementation Notes:**
+- DND detection: Uses `NotificationManager.currentInterruptionFilter`
+- DND control: Uses `NotificationManager.setInterruptionFilter()`
+- Bedtime mode detection: Reads `Settings.Secure.BEDTIME_MODE_SETTING` (Pixel-specific)
+- Bedtime mode control: Writes to `Settings.Secure.BEDTIME_MODE_SETTING`
+- Notifications: Sends broadcast intents to NotificationInterceptorService for mimic notification creation
+
 ### RootUtils.kt (Optional)
 If root access is available (Magisk), the app can:
 - Detect profile names via `pm list users`
@@ -315,7 +369,7 @@ GitHub Actions automatically builds on PR and push to main/master with:
 
 ---
 
-**Last Updated**: 2026-01-29
+**Last Updated**: 2026-02-03
 **Android Version**: Android 15 (API 35)
 **Build System**: Gradle 8.2
 **Deduplication Strategy**: Key-based storage, adaptive mimic (threaded vs separate)

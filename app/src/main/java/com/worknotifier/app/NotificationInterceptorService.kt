@@ -49,8 +49,11 @@ class NotificationInterceptorService : NotificationListenerService() {
         private const val MIMIC_NOTIFICATION_ID_BASE = 100000
         private const val ACTION_MIMIC_DISMISSED = "com.worknotifier.app.MIMIC_DISMISSED"
         private const val ACTION_MIMIC_ACTION = "com.worknotifier.app.MIMIC_ACTION"
+        private const val ACTION_AUTO_MODE_SUCCESS = "com.worknotifier.app.AUTO_MODE_SUCCESS"
+        private const val ACTION_AUTO_MODE_ERROR = "com.worknotifier.app.AUTO_MODE_ERROR"
         private const val EXTRA_ORIGINAL_KEY = "original_key"
         private const val EXTRA_ACTION_INDEX = "action_index"
+        private const val EXTRA_MESSAGE = "message"
     }
 
     /**
@@ -132,6 +135,14 @@ class NotificationInterceptorService : NotificationListenerService() {
                     // Handle action bridging from mimic to original notification
                     handleMimicActionBridge(intent)
                 }
+                ACTION_AUTO_MODE_SUCCESS -> {
+                    val message = intent.getStringExtra(EXTRA_MESSAGE) ?: "Mode changed"
+                    createAutoModeNotification(message, isError = false)
+                }
+                ACTION_AUTO_MODE_ERROR -> {
+                    val message = intent.getStringExtra(EXTRA_MESSAGE) ?: "Mode change failed"
+                    createAutoModeNotification(message, isError = true)
+                }
             }
         }
     }
@@ -150,10 +161,12 @@ class NotificationInterceptorService : NotificationListenerService() {
         // Create notification channel for mimic notifications
         createMimicNotificationChannel()
 
-        // Register broadcast receiver for mimic actions
+        // Register broadcast receiver for mimic actions and auto mode notifications
         val filter = IntentFilter().apply {
             addAction(ACTION_MIMIC_DISMISSED)
             addAction(ACTION_MIMIC_ACTION)
+            addAction(ACTION_AUTO_MODE_SUCCESS)
+            addAction(ACTION_AUTO_MODE_ERROR)
         }
         registerReceiver(mimicActionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
 
@@ -568,6 +581,41 @@ class NotificationInterceptorService : NotificationListenerService() {
             description = "Mimic notifications from other apps"
         }
         notificationManager.createNotificationChannel(channel)
+    }
+
+    /**
+     * Creates a simple notification for Android Auto mode management feedback.
+     * Used by AutoModeManager to display success/error messages.
+     */
+    private fun createAutoModeNotification(message: String, isError: Boolean) {
+        try {
+            val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
+            // Use a fixed ID for auto mode notifications (always replace previous)
+            val notificationId = MIMIC_NOTIFICATION_ID_BASE - 1
+
+            // Create MessagingStyle for Android Auto compatibility
+            val deviceUser = Person.Builder()
+                .setName("Work Notifier")
+                .build()
+
+            val messagingStyle = NotificationCompat.MessagingStyle(deviceUser)
+                .setConversationTitle(if (isError) "Android Auto Mode Error" else "Android Auto Mode")
+                .addMessage(message, System.currentTimeMillis(), deviceUser)
+
+            val notification = NotificationCompat.Builder(this, MIMIC_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setStyle(messagingStyle)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .build()
+
+            notificationManager.notify(notificationId, notification)
+            Log.d(TAG, "Auto mode notification created: $message (error=$isError)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating auto mode notification", e)
+        }
     }
 
     /**
