@@ -79,14 +79,14 @@ The app uses `NotificationListenerService` to intercept notifications from:
   - Useful for verifying permissions and functionality
 - Requires permissions:
   - `ACCESS_NOTIFICATION_POLICY` for DND control (user must enable in Settings)
-  - `WRITE_SECURE_SETTINGS` for Bedtime mode control (auto-granted via root on startup)
+  - Root access for Bedtime mode control (auto-checked on startup)
 - Uses official NotificationManager API for DND
-- **Bedtime Mode Detection (Experimental)**:
-  - Bedtime mode Settings.Secure key is not publicly documented
-  - Code tries multiple possible keys and logs diagnostic information
-  - Automatically dumps all Bedtime-related Settings.Secure entries via root
-  - Check logcat when testing to see which settings are found
-  - May not work on all Pixel devices until correct key is identified
+- **Bedtime Mode Control**:
+  - Detects Bedtime mode state by checking `accessibility_display_grayscale` setting
+  - Toggles Bedtime mode by clicking Quick Settings tile via root: `cmd statusbar click-tile`
+  - Uses Digital Wellbeing's GrayscaleTileService component
+  - Requires root access to execute tile click command
+  - More reliable than undocumented Settings.Secure keys
 
 ## Project Structure
 
@@ -267,8 +267,7 @@ Manages DND and Bedtime mode state when connecting/disconnecting from Android Au
 
 **Permissions:**
 - `ACCESS_NOTIFICATION_POLICY`: For DND control (user must enable in Settings)
-- `WRITE_SECURE_SETTINGS`: For Bedtime mode control (auto-granted via root on startup)
-  - Manual grant command (if needed): `adb shell pm grant com.worknotifier.app android.permission.WRITE_SECURE_SETTINGS`
+- Root access: Required for Bedtime mode control (auto-checked on startup)
 
 **Public Methods:**
 - `initialize(context)`: Initialize manager and start observing Android Auto connection
@@ -278,10 +277,11 @@ Manages DND and Bedtime mode state when connecting/disconnecting from Android Au
 **Implementation Notes:**
 - DND detection: Uses `NotificationManager.currentInterruptionFilter`
 - DND control: Uses `NotificationManager.setInterruptionFilter()`
-- Bedtime mode detection: Tries multiple Settings.Secure keys (exact key not documented)
-- Bedtime mode control: Writes to discovered Settings.Secure key
-- Diagnostic mode: Automatically dumps all Bedtime-related settings via root when detection fails
-- Filters settings for keywords: bedtime, sleep, wellbeing, grayscale, wind_down, night, dnd
+- Bedtime mode detection: Checks `accessibility_display_grayscale` Settings.Secure value
+- Bedtime mode control: Clicks Quick Settings tile via root command:
+  - `cmd statusbar click-tile com.google.android.apps.wellbeing/com.google.android.apps.wellbeing.screen.ui.GrayscaleTileService`
+- Tile clicking is more reliable than undocumented Settings.Secure keys
+- Includes 500ms delay after tile click for system to process the change
 - Notifications: Sends broadcast intents to NotificationInterceptorService for mimic notification creation
 - Root permission grant: Uses `RootUtils.executeRootCommand()` to run `pm grant` command
 - Test function: Uses coroutines with delays for step-by-step demonstration
