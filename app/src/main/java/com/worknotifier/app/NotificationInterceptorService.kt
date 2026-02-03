@@ -738,6 +738,25 @@ class NotificationInterceptorService : NotificationListenerService() {
                 "\nℹ️ Reply not available"
             }
 
+            // Helper function to ensure Person has required Android Auto properties
+            fun ensurePersonHasRequiredProperties(originalPerson: Person?): Person {
+                if (originalPerson == null) return senderPerson
+
+                // Rebuild Person with Android Auto required properties
+                val builder = Person.Builder()
+                    .setName(originalPerson.name ?: senderName)
+                    .setKey(originalPerson.key ?: "${packageName}_${System.currentTimeMillis()}")
+                    .setImportant(true)
+
+                // Preserve icon if available
+                originalPerson.icon?.let { builder.setIcon(it) }
+
+                // Preserve URI if available
+                originalPerson.uri?.let { builder.setUri(it) }
+
+                return builder.build()
+            }
+
             // Create or recreate MessagingStyle for Android Auto compatibility
             val messagingStyle = if (originalMessagingStyle != null) {
                 // Use original MessagingStyle and append indicator to last message
@@ -752,16 +771,18 @@ class NotificationInterceptorService : NotificationListenerService() {
                 if (messages.isNotEmpty()) {
                     // Add all messages except the last one
                     messages.dropLast(1).forEach { msg ->
-                        newStyle.addMessage(msg.text, msg.timestamp, msg.person)
+                        val enhancedPerson = ensurePersonHasRequiredProperties(msg.person)
+                        newStyle.addMessage(msg.text, msg.timestamp, enhancedPerson)
                     }
 
                     // Add the last message with appended capability indicator
                     val lastMessage = messages.last()
                     val lastMessageText = lastMessage.text?.toString() ?: ""
+                    val enhancedLastPerson = ensurePersonHasRequiredProperties(lastMessage.person)
                     newStyle.addMessage(
                         lastMessageText + capabilityIndicator,
                         lastMessage.timestamp,
-                        lastMessage.person
+                        enhancedLastPerson
                     )
                 } else {
                     // No messages in original style, add a default message
