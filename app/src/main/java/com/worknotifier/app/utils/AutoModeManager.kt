@@ -35,7 +35,14 @@ object AutoModeManager {
     private const val KEY_BEDTIME_WAS_ACTIVE = "bedtime_was_active"
 
     // Bedtime mode settings keys (Pixel-specific)
-    private const val BEDTIME_MODE_SETTING = "bedtime_mode"
+    // Try multiple possible keys as the exact key isn't documented
+    private val BEDTIME_MODE_KEYS = listOf(
+        "bedtime_mode",
+        "bedtime_mode_enabled",
+        "wellbeing_bedtime_mode",
+        "digital_wellbeing_bedtime_mode",
+        "bedtime_mode_active"
+    )
 
     private var context: Context? = null
     private var notificationManager: NotificationManager? = null
@@ -246,20 +253,57 @@ object AutoModeManager {
     /**
      * Check if Bedtime mode is currently active.
      * Bedtime mode is a Pixel-specific feature from Digital Wellbeing.
+     * Tries multiple possible setting keys as the exact key isn't documented.
      */
     private fun isBedtimeActive(): Boolean {
         return try {
-            context?.let {
-                val value = Settings.Secure.getInt(it.contentResolver, BEDTIME_MODE_SETTING, 0)
-                value == 1
+            context?.let { ctx ->
+                // Try all possible bedtime mode keys
+                for (key in BEDTIME_MODE_KEYS) {
+                    try {
+                        val value = Settings.Secure.getInt(ctx.contentResolver, key, -1)
+                        Log.d(TAG, "Bedtime mode check - key: $key, value: $value")
+                        if (value == 1) {
+                            Log.d(TAG, "Bedtime mode is ACTIVE (key: $key)")
+                            return true
+                        }
+                    } catch (e: Exception) {
+                        // Key doesn't exist, try next one
+                        Log.v(TAG, "Key $key not found or not readable")
+                    }
+                }
+                Log.d(TAG, "Bedtime mode is INACTIVE (checked ${BEDTIME_MODE_KEYS.size} keys)")
+                false
             } ?: false
         } catch (e: SecurityException) {
-            Log.w(TAG, "No permission to read Bedtime mode setting", e)
+            Log.w(TAG, "No permission to read Bedtime mode settings", e)
             false
         } catch (e: Exception) {
             Log.e(TAG, "Error checking Bedtime mode status", e)
             false
         }
+    }
+
+    /**
+     * Find which bedtime mode setting key is actually being used on this device.
+     * Returns the key name if found, null otherwise.
+     */
+    private fun findBedtimeModeKey(): String? {
+        context?.let { ctx ->
+            for (key in BEDTIME_MODE_KEYS) {
+                try {
+                    val value = Settings.Secure.getInt(ctx.contentResolver, key, -1)
+                    if (value != -1) {
+                        Log.d(TAG, "Found bedtime mode key: $key (value: $value)")
+                        return key
+                    }
+                } catch (e: Exception) {
+                    // Key doesn't exist, continue
+                }
+            }
+        }
+        Log.w(TAG, "No bedtime mode key found on this device")
+        return null
     }
 
     /**
@@ -269,9 +313,16 @@ object AutoModeManager {
      */
     private fun disableBedtimeMode(): Boolean {
         return try {
-            context?.let {
-                Settings.Secure.putInt(it.contentResolver, BEDTIME_MODE_SETTING, 0)
-                true
+            context?.let { ctx ->
+                val key = findBedtimeModeKey()
+                if (key != null) {
+                    Settings.Secure.putInt(ctx.contentResolver, key, 0)
+                    Log.d(TAG, "Bedtime mode disabled using key: $key")
+                    true
+                } else {
+                    Log.w(TAG, "Cannot disable Bedtime mode - no valid setting key found")
+                    false
+                }
             } ?: false
         } catch (e: SecurityException) {
             Log.w(TAG, "No permission to write Bedtime mode setting. Grant via: adb shell pm grant ${context?.packageName} android.permission.WRITE_SECURE_SETTINGS", e)
@@ -289,9 +340,16 @@ object AutoModeManager {
      */
     private fun enableBedtimeMode(): Boolean {
         return try {
-            context?.let {
-                Settings.Secure.putInt(it.contentResolver, BEDTIME_MODE_SETTING, 1)
-                true
+            context?.let { ctx ->
+                val key = findBedtimeModeKey()
+                if (key != null) {
+                    Settings.Secure.putInt(ctx.contentResolver, key, 1)
+                    Log.d(TAG, "Bedtime mode enabled using key: $key")
+                    true
+                } else {
+                    Log.w(TAG, "Cannot enable Bedtime mode - no valid setting key found")
+                    false
+                }
             } ?: false
         } catch (e: SecurityException) {
             Log.w(TAG, "No permission to write Bedtime mode setting. Grant via: adb shell pm grant ${context?.packageName} android.permission.WRITE_SECURE_SETTINGS", e)
