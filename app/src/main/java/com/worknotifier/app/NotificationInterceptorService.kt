@@ -692,6 +692,8 @@ class NotificationInterceptorService : NotificationListenerService() {
             val senderName = title ?: appName
             val senderPerson = Person.Builder()
                 .setName("$senderName$profileBadge")
+                .setKey("${packageName}_${profileType.name}_sender")
+                .setImportant(true)
                 .apply {
                     appIconBase64?.let { iconBase64 ->
                         decodeBase64ToBitmap(iconBase64)?.let { bitmap ->
@@ -702,7 +704,8 @@ class NotificationInterceptorService : NotificationListenerService() {
                 .build()
 
             val deviceUser = Person.Builder()
-                .setName("You")
+                .setName("Me")
+                .setKey("device_user")
                 .build()
 
             // Extract actions from original notification for bridging
