@@ -47,6 +47,9 @@ class MainActivity : AppCompatActivity() {
         // Initialize Auto Mode Manager (DND and Bedtime mode control)
         AutoModeManager.initialize(applicationContext)
 
+        // Setup permissions with root on startup
+        AutoModeManager.setupPermissionsWithRoot()
+
         // Create notification channel
         createNotificationChannel()
 
@@ -75,6 +78,11 @@ class MainActivity : AppCompatActivity() {
             // Launch the PrivateLauncherActivity
             val intent = Intent(this, PrivateLauncherActivity::class.java)
             startActivity(intent)
+        }
+
+        findViewById<MaterialButton>(R.id.btnTestDndBedtime).setOnClickListener {
+            // Test DND and Bedtime mode toggle
+            AutoModeManager.testToggleModes()
         }
     }
 

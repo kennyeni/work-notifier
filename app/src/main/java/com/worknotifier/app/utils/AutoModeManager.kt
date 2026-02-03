@@ -2,11 +2,16 @@ package com.worknotifier.app.utils
 
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.provider.Settings
 import android.util.Log
 import androidx.car.app.connection.CarConnection
 import androidx.lifecycle.Observer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Manages DND and Bedtime mode state when connecting/disconnecting from Android Auto.
@@ -319,6 +324,183 @@ object AutoModeManager {
                 putExtra("message", message)
             })
             Log.d(TAG, "Error notification requested: $message")
+        }
+    }
+
+    /**
+     * Setup required permissions using root access.
+     * Grants WRITE_SECURE_SETTINGS permission and opens DND settings.
+     */
+    fun setupPermissionsWithRoot() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val results = mutableListOf<String>()
+            var hasErrors = false
+
+            try {
+                // Check if rooted
+                if (!RootUtils.isRooted()) {
+                    withContext(Dispatchers.Main) {
+                        createErrorNotification("Root access not available")
+                    }
+                    return@launch
+                }
+
+                // Grant WRITE_SECURE_SETTINGS permission via root
+                context?.let { ctx ->
+                    val packageName = ctx.packageName
+                    val grantCommand = "pm grant $packageName android.permission.WRITE_SECURE_SETTINGS"
+
+                    Log.d(TAG, "Granting WRITE_SECURE_SETTINGS via root...")
+                    val grantResult = RootUtils.executeRootCommand(grantCommand)
+
+                    if (grantResult.isNotEmpty() && grantResult.any { it.contains("error", ignoreCase = true) }) {
+                        Log.e(TAG, "Error granting permission: $grantResult")
+                        hasErrors = true
+                        results.add("Failed to grant WRITE_SECURE_SETTINGS")
+                    } else {
+                        Log.d(TAG, "WRITE_SECURE_SETTINGS granted successfully")
+                        results.add("WRITE_SECURE_SETTINGS granted")
+                    }
+
+                    // Check DND permission status
+                    withContext(Dispatchers.Main) {
+                        val hasDndAccess = notificationManager?.isNotificationPolicyAccessGranted ?: false
+                        if (!hasDndAccess) {
+                            results.add("DND access needed - opening settings")
+
+                            // Open DND settings for user to manually grant
+                            try {
+                                val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                ctx.startActivity(intent)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to open DND settings", e)
+                                results.add("Failed to open DND settings")
+                                hasErrors = true
+                            }
+                        } else {
+                            results.add("DND access already granted")
+                        }
+
+                        // Send notification with results
+                        val message = results.joinToString("\n")
+                        if (hasErrors) {
+                            createErrorNotification("Permission setup:\n$message")
+                        } else {
+                            createSuccessNotification("Permission setup complete:\n$message")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error setting up permissions", e)
+                withContext(Dispatchers.Main) {
+                    createErrorNotification("Permission setup failed: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Test DND and Bedtime mode toggle functionality.
+     * Disables both modes, waits, then re-enables them.
+     */
+    fun testToggleModes() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                Log.d(TAG, "Starting mode toggle test...")
+
+                // Save current states
+                val dndWasActive = isDndActive()
+                val bedtimeWasActive = isBedtimeActive()
+
+                withContext(Dispatchers.Main) {
+                    createSuccessNotification("Test started\nDND: ${if (dndWasActive) "ON" else "OFF"}\nBedtime: ${if (bedtimeWasActive) "ON" else "OFF"}")
+                }
+
+                // Wait 2 seconds
+                kotlinx.coroutines.delay(2000)
+
+                // Step 1: Disable both modes
+                val results = mutableListOf<String>()
+                var hasErrors = false
+
+                if (dndWasActive) {
+                    if (disableDnd()) {
+                        results.add("✓ DND disabled")
+                        Log.d(TAG, "DND disabled successfully")
+                    } else {
+                        results.add("✗ DND disable failed")
+                        hasErrors = true
+                        Log.e(TAG, "Failed to disable DND")
+                    }
+                }
+
+                if (bedtimeWasActive) {
+                    if (disableBedtimeMode()) {
+                        results.add("✓ Bedtime disabled")
+                        Log.d(TAG, "Bedtime mode disabled successfully")
+                    } else {
+                        results.add("✗ Bedtime disable failed")
+                        hasErrors = true
+                        Log.e(TAG, "Failed to disable Bedtime mode")
+                    }
+                }
+
+                if (results.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        if (hasErrors) {
+                            createErrorNotification("Disable step:\n${results.joinToString("\n")}")
+                        } else {
+                            createSuccessNotification("Disable step:\n${results.joinToString("\n")}")
+                        }
+                    }
+                }
+
+                // Wait 3 seconds
+                kotlinx.coroutines.delay(3000)
+
+                // Step 2: Re-enable modes
+                results.clear()
+                hasErrors = false
+
+                if (dndWasActive) {
+                    if (enableDnd()) {
+                        results.add("✓ DND restored")
+                        Log.d(TAG, "DND restored successfully")
+                    } else {
+                        results.add("✗ DND restore failed")
+                        hasErrors = true
+                        Log.e(TAG, "Failed to restore DND")
+                    }
+                }
+
+                if (bedtimeWasActive) {
+                    if (enableBedtimeMode()) {
+                        results.add("✓ Bedtime restored")
+                        Log.d(TAG, "Bedtime mode restored successfully")
+                    } else {
+                        results.add("✗ Bedtime restore failed")
+                        hasErrors = true
+                        Log.e(TAG, "Failed to restore Bedtime mode")
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    if (results.isEmpty()) {
+                        createSuccessNotification("Test complete\nNo modes were active")
+                    } else if (hasErrors) {
+                        createErrorNotification("Restore step:\n${results.joinToString("\n")}")
+                    } else {
+                        createSuccessNotification("Test complete:\n${results.joinToString("\n")}")
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during mode toggle test", e)
+                withContext(Dispatchers.Main) {
+                    createErrorNotification("Test failed: ${e.message}")
+                }
+            }
         }
     }
 }

@@ -69,9 +69,17 @@ The app uses `NotificationListenerService` to intercept notifications from:
   - Restores Bedtime mode if it was previously active
   - Creates a mimic notification confirming which modes were restored
 - Fully automatic operation (no user toggles required)
+- **Root-based Permission Setup** (automatic on app startup):
+  - Automatically grants `WRITE_SECURE_SETTINGS` permission via root if available
+  - Opens DND settings if permission not granted
+  - Shows mimic notification with setup results
+- **Test Button**: "Test DND & Bedtime" button in MainActivity
+  - Manually tests mode toggling: disables → waits 3 seconds → re-enables
+  - Shows mimic notifications for each step with checkmarks/X marks
+  - Useful for verifying permissions and functionality
 - Requires permissions:
-  - `ACCESS_NOTIFICATION_POLICY` for DND control (auto-granted)
-  - `WRITE_SECURE_SETTINGS` for Bedtime mode control (grant via ADB: `adb shell pm grant com.worknotifier.app android.permission.WRITE_SECURE_SETTINGS`)
+  - `ACCESS_NOTIFICATION_POLICY` for DND control (user must enable in Settings)
+  - `WRITE_SECURE_SETTINGS` for Bedtime mode control (auto-granted via root on startup)
 - Uses official NotificationManager API for DND
 - Uses Settings.Secure API for Bedtime mode (Pixel-specific feature)
 
@@ -253,9 +261,14 @@ Manages DND and Bedtime mode state when connecting/disconnecting from Android Au
   - Clears saved state
 
 **Permissions:**
-- `ACCESS_NOTIFICATION_POLICY`: For DND control (auto-granted, user must enable in Settings)
-- `WRITE_SECURE_SETTINGS`: For Bedtime mode control (grant via ADB)
-  - Grant command: `adb shell pm grant com.worknotifier.app android.permission.WRITE_SECURE_SETTINGS`
+- `ACCESS_NOTIFICATION_POLICY`: For DND control (user must enable in Settings)
+- `WRITE_SECURE_SETTINGS`: For Bedtime mode control (auto-granted via root on startup)
+  - Manual grant command (if needed): `adb shell pm grant com.worknotifier.app android.permission.WRITE_SECURE_SETTINGS`
+
+**Public Methods:**
+- `initialize(context)`: Initialize manager and start observing Android Auto connection
+- `setupPermissionsWithRoot()`: Auto-grant WRITE_SECURE_SETTINGS via root (called on app startup)
+- `testToggleModes()`: Manually test DND/Bedtime toggling with step-by-step notifications
 
 **Implementation Notes:**
 - DND detection: Uses `NotificationManager.currentInterruptionFilter`
@@ -263,6 +276,8 @@ Manages DND and Bedtime mode state when connecting/disconnecting from Android Au
 - Bedtime mode detection: Reads `Settings.Secure.BEDTIME_MODE_SETTING` (Pixel-specific)
 - Bedtime mode control: Writes to `Settings.Secure.BEDTIME_MODE_SETTING`
 - Notifications: Sends broadcast intents to NotificationInterceptorService for mimic notification creation
+- Root permission grant: Uses `RootUtils.executeRootCommand()` to run `pm grant` command
+- Test function: Uses coroutines with delays for step-by-step demonstration
 
 ### RootUtils.kt (Optional)
 If root access is available (Magisk), the app can:
