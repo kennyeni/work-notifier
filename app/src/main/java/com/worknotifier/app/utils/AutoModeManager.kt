@@ -256,11 +256,53 @@ object AutoModeManager {
                 val grayscaleEnabled = Settings.Secure.getInt(ctx.contentResolver, GRAYSCALE_SETTING, 0)
                 val isActive = grayscaleEnabled == 1
                 Log.d(TAG, "Bedtime mode check - grayscale: $grayscaleEnabled, active: $isActive")
+
+                // Dump additional settings for diagnostic purposes
+                dumpBedtimeRelatedSettings()
+
                 isActive
             } ?: false
         } catch (e: Exception) {
             Log.e(TAG, "Error checking Bedtime mode status", e)
             false
+        }
+    }
+
+    /**
+     * Diagnostic function to dump settings that might indicate Bedtime mode state.
+     * Helps identify which setting(s) actually change when Bedtime mode is toggled.
+     */
+    private fun dumpBedtimeRelatedSettings() {
+        try {
+            context?.let { ctx ->
+                // Check grayscale
+                val grayscale = Settings.Secure.getInt(ctx.contentResolver, GRAYSCALE_SETTING, -1)
+                Log.d(TAG, "  accessibility_display_grayscale=$grayscale")
+
+                // Check other potentially related settings
+                val settingsToCheck = listOf(
+                    "ui_night_mode",
+                    "night_display_activated",
+                    "twilight_mode",
+                    "screensaver_enabled",
+                    "screensaver_activate_on_sleep",
+                    "accessibility_display_inversion_enabled",
+                    "accessibility_display_daltonizer_enabled"
+                )
+
+                for (setting in settingsToCheck) {
+                    try {
+                        val value = Settings.Secure.getInt(ctx.contentResolver, setting, -999)
+                        if (value != -999) {
+                            Log.d(TAG, "  $setting=$value")
+                        }
+                    } catch (e: Exception) {
+                        // Setting doesn't exist or can't be read
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error dumping bedtime settings", e)
         }
     }
 
