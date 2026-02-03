@@ -81,7 +81,12 @@ The app uses `NotificationListenerService` to intercept notifications from:
   - `ACCESS_NOTIFICATION_POLICY` for DND control (user must enable in Settings)
   - `WRITE_SECURE_SETTINGS` for Bedtime mode control (auto-granted via root on startup)
 - Uses official NotificationManager API for DND
-- Uses Settings.Secure API for Bedtime mode (Pixel-specific feature)
+- **Bedtime Mode Detection (Experimental)**:
+  - Bedtime mode Settings.Secure key is not publicly documented
+  - Code tries multiple possible keys and logs diagnostic information
+  - Automatically dumps all Bedtime-related Settings.Secure entries via root
+  - Check logcat when testing to see which settings are found
+  - May not work on all Pixel devices until correct key is identified
 
 ## Project Structure
 
@@ -273,8 +278,10 @@ Manages DND and Bedtime mode state when connecting/disconnecting from Android Au
 **Implementation Notes:**
 - DND detection: Uses `NotificationManager.currentInterruptionFilter`
 - DND control: Uses `NotificationManager.setInterruptionFilter()`
-- Bedtime mode detection: Reads `Settings.Secure.BEDTIME_MODE_SETTING` (Pixel-specific)
-- Bedtime mode control: Writes to `Settings.Secure.BEDTIME_MODE_SETTING`
+- Bedtime mode detection: Tries multiple Settings.Secure keys (exact key not documented)
+- Bedtime mode control: Writes to discovered Settings.Secure key
+- Diagnostic mode: Automatically dumps all Bedtime-related settings via root when detection fails
+- Filters settings for keywords: bedtime, sleep, wellbeing, grayscale, wind_down, night, dnd
 - Notifications: Sends broadcast intents to NotificationInterceptorService for mimic notification creation
 - Root permission grant: Uses `RootUtils.executeRootCommand()` to run `pm grant` command
 - Test function: Uses coroutines with delays for step-by-step demonstration

@@ -251,6 +251,52 @@ object AutoModeManager {
     }
 
     /**
+     * Diagnostic function to find all Settings.Secure keys that might be related to Bedtime mode.
+     * Uses root to dump all settings and filters for relevant ones.
+     */
+    private fun dumpBedtimeRelatedSettings(): String {
+        val output = StringBuilder()
+
+        try {
+            // Use root to dump all Settings.Secure settings
+            val dumpCommand = "settings list secure"
+            val result = RootUtils.executeRootCommand(dumpCommand)
+
+            if (result.isNullOrEmpty()) {
+                output.append("Failed to dump settings\n")
+                return output.toString()
+            }
+
+            // Filter for anything that might be related to bedtime
+            val relevantKeywords = listOf(
+                "bedtime", "bed_time", "sleep", "wellbeing", "well_being",
+                "grayscale", "gray_scale", "greyscale", "grey_scale",
+                "wind_down", "winddown", "night", "dnd", "do_not_disturb"
+            )
+
+            val lines = result.split("\n")
+            output.append("=== Scanning ${lines.size} Settings.Secure entries ===\n\n")
+
+            var foundCount = 0
+            for (line in lines) {
+                val lineLower = line.lowercase()
+                if (relevantKeywords.any { lineLower.contains(it) }) {
+                    output.append("$line\n")
+                    foundCount++
+                }
+            }
+
+            output.append("\n=== Found $foundCount potentially relevant settings ===")
+
+        } catch (e: Exception) {
+            output.append("Error dumping settings: ${e.message}\n")
+            Log.e(TAG, "Error dumping bedtime settings", e)
+        }
+
+        return output.toString()
+    }
+
+    /**
      * Check if Bedtime mode is currently active.
      * Bedtime mode is a Pixel-specific feature from Digital Wellbeing.
      * Tries multiple possible setting keys as the exact key isn't documented.
@@ -272,7 +318,10 @@ object AutoModeManager {
                         Log.v(TAG, "Key $key not found or not readable")
                     }
                 }
+
+                // If no keys worked, dump all settings to help diagnose
                 Log.d(TAG, "Bedtime mode is INACTIVE (checked ${BEDTIME_MODE_KEYS.size} keys)")
+                Log.d(TAG, "Dumping related settings for diagnostic:\n${dumpBedtimeRelatedSettings()}")
                 false
             } ?: false
         } catch (e: SecurityException) {
