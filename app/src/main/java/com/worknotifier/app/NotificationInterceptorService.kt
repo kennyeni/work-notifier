@@ -389,9 +389,14 @@ class NotificationInterceptorService : NotificationListenerService() {
             // 1. Mimic is enabled for this app+profile
             // 2. Notification passes regex filters
             // 3. If Android Auto Only Mode is enabled, must be connected to Android Auto
-            if (NotificationStorage.isMimicEnabled(packageName, profileType) &&
-                NotificationStorage.matchesFilters(interceptedNotification) &&
-                shouldCreateMimic()) {
+            val mimicEnabled = NotificationStorage.isMimicEnabled(packageName, profileType)
+            val matchesFilters = NotificationStorage.matchesFilters(interceptedNotification)
+            val shouldCreate = shouldCreateMimic()
+
+            Log.d(TAG, "Live notification check - App: $appName, MimicEnabled: $mimicEnabled, MatchesFilters: $matchesFilters, ShouldCreate: $shouldCreate")
+
+            if (mimicEnabled && matchesFilters && shouldCreate) {
+                Log.d(TAG, "Creating live mimic for: $appName")
                 createMimicNotification(
                     packageName = packageName,
                     appName = appName,
@@ -935,9 +940,11 @@ class NotificationInterceptorService : NotificationListenerService() {
             }
 
             // Post the mimic notification
-            notificationManager.notify(mimicId, builder.build())
+            val builtNotification = builder.build()
+            notificationManager.notify(mimicId, builtNotification)
 
-            Log.d(TAG, "Mimic notification created with MessagingStyle: ID=$mimicId, App=$appName")
+            Log.d(TAG, "Mimic notification created with MessagingStyle: ID=$mimicId, App=$appName, isManual=${originalNotificationKey == null}")
+            Log.d(TAG, "Mimic notification extras - hasMessagingStyle: ${builtNotification.extras.containsKey(Notification.EXTRA_MESSAGING_STYLE_USER)}")
         } catch (e: Exception) {
             Log.e(TAG, "Error creating mimic notification", e)
 
