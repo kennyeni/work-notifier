@@ -11,6 +11,9 @@ import androidx.car.app.model.Row
 import androidx.car.app.model.Template
 import androidx.core.graphics.drawable.IconCompat
 import com.worknotifier.app.utils.AutoModeManager
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Screen for controlling Bedtime mode from Android Auto.
@@ -18,24 +21,34 @@ import com.worknotifier.app.utils.AutoModeManager
  */
 class BedtimeScreen(carContext: CarContext) : Screen(carContext) {
 
+    private var lastToggleTime: String? = null
+
     override fun onGetTemplate(): Template {
-        return PaneTemplate.Builder(
-            Pane.Builder()
-                .addRow(
-                    Row.Builder()
-                        .setTitle("Work Notifier")
-                        .build()
-                )
-                .addRow(
-                    Row.Builder()
-                        .setTitle("Toggle Bedtime Mode")
-                        .setOnClickListener {
-                            toggleBedtimeMode()
-                        }
-                        .build()
-                )
-                .build()
-        )
+        val paneBuilder = Pane.Builder()
+            .addRow(
+                Row.Builder()
+                    .setTitle("Work Notifier")
+                    .build()
+            )
+            .addRow(
+                Row.Builder()
+                    .setTitle("Toggle Bedtime Mode")
+                    .setOnClickListener {
+                        toggleBedtimeMode()
+                    }
+                    .build()
+            )
+
+        // Show feedback if toggle was recently executed
+        lastToggleTime?.let { time ->
+            paneBuilder.addRow(
+                Row.Builder()
+                    .setTitle("Last toggled: $time")
+                    .build()
+            )
+        }
+
+        return PaneTemplate.Builder(paneBuilder.build())
             .setHeaderAction(Action.APP_ICON)
             .build()
     }
@@ -43,6 +56,10 @@ class BedtimeScreen(carContext: CarContext) : Screen(carContext) {
     private fun toggleBedtimeMode() {
         // Toggle Bedtime mode
         AutoModeManager.toggleBedtimeModeManual()
+
+        // Update last toggle time
+        val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+        lastToggleTime = timeFormat.format(Date())
 
         // Refresh the screen to show feedback
         invalidate()
