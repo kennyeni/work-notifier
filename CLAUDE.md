@@ -82,11 +82,16 @@ The app uses `NotificationListenerService` to intercept notifications from:
   - Root access for Bedtime mode control (auto-checked on startup)
 - Uses official NotificationManager API for DND
 - **Bedtime Mode Control**:
-  - Detects Bedtime mode state by checking `accessibility_display_grayscale` setting
   - Toggles Bedtime mode by clicking Quick Settings tile via root: `cmd statusbar click-tile`
   - Uses Digital Wellbeing's GrayscaleTileService component
   - Requires root access to execute tile click command
   - More reliable than undocumented Settings.Secure keys
+- **Android Auto UI** (NEW):
+  - Dedicated app screen on Android Auto display
+  - Manual "Toggle Bedtime Mode" button visible while driving
+  - Shows mimic notification when toggled
+  - Accessible from Android Auto app launcher
+  - User-controlled toggle instead of automatic detection
 
 ## Project Structure
 
@@ -101,6 +106,8 @@ work-notifier/
 │   │   ├── NotificationInterceptorService.kt  # Core interception logic
 │   │   ├── InterceptedAppsActivity.kt        # Display intercepted apps
 │   │   ├── PrivateLauncherActivity.kt        # Create shortcuts for Private apps
+│   │   ├── BedtimeCarAppService.kt           # Android Auto Car App Service
+│   │   ├── BedtimeScreen.kt                  # Android Auto UI screen
 │   │   ├── data/
 │   │   │   ├── InterceptedNotification.kt    # Data model with ProfileType enum and icon storage
 │   │   │   └── NotificationStorage.kt        # Persistent and in-memory storage

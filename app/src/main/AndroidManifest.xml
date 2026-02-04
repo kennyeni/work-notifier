@@ -67,6 +67,16 @@
             </intent-filter>
         </service>
 
+        <!-- Android Auto Car App Service for Bedtime mode control -->
+        <service
+            android:name=".BedtimeCarAppService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.NAVIGATION"/>
+            </intent-filter>
+        </service>
+
         <!-- Activity to display intercepted apps and notifications -->
         <activity
             android:name=".InterceptedAppsActivity"

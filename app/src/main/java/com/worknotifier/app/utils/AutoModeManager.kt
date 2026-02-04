@@ -472,6 +472,33 @@ object AutoModeManager {
     }
 
     /**
+     * Manually toggle Bedtime mode (for use from Android Auto UI).
+     * This is a public method that can be called from the car screen.
+     */
+    fun toggleBedtimeModeManual() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                Log.d(TAG, "Manual Bedtime mode toggle requested")
+
+                if (toggleBedtimeMode()) {
+                    withContext(Dispatchers.Main) {
+                        createSuccessNotification("Bedtime mode toggled")
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        createErrorNotification("Failed to toggle Bedtime mode")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error toggling Bedtime mode manually", e)
+                withContext(Dispatchers.Main) {
+                    createErrorNotification("Error: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
      * Test DND and Bedtime mode toggle functionality.
      * Disables both modes, waits, then re-enables them.
      */
