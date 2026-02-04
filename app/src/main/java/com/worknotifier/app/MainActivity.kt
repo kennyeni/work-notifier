@@ -24,6 +24,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.worknotifier.app.data.NotificationStorage
 import com.worknotifier.app.utils.AndroidAutoDetector
+import com.worknotifier.app.utils.AutoModeManager
 
 class MainActivity : AppCompatActivity() {
 
@@ -42,6 +43,12 @@ class MainActivity : AppCompatActivity() {
 
         // Initialize Android Auto detector
         AndroidAutoDetector.initialize(applicationContext)
+
+        // Initialize Auto Mode Manager (DND and Bedtime mode control)
+        AutoModeManager.initialize(applicationContext)
+
+        // Setup permissions with root on startup
+        AutoModeManager.setupPermissionsWithRoot()
 
         // Create notification channel
         createNotificationChannel()
@@ -71,6 +78,11 @@ class MainActivity : AppCompatActivity() {
             // Launch the PrivateLauncherActivity
             val intent = Intent(this, PrivateLauncherActivity::class.java)
             startActivity(intent)
+        }
+
+        findViewById<MaterialButton>(R.id.btnTestDndBedtime).setOnClickListener {
+            // Test DND and Bedtime mode toggle
+            AutoModeManager.testToggleModes()
         }
     }
 
