@@ -692,6 +692,7 @@ class NotificationInterceptorService : NotificationListenerService() {
             val senderName = title ?: appName
             val senderPerson = Person.Builder()
                 .setName("$senderName$profileBadge")
+                .setKey("$packageName|$profileType|sender")
                 .apply {
                     appIconBase64?.let { iconBase64 ->
                         decodeBase64ToBitmap(iconBase64)?.let { bitmap ->
@@ -703,6 +704,7 @@ class NotificationInterceptorService : NotificationListenerService() {
 
             val deviceUser = Person.Builder()
                 .setName("You")
+                .setKey("device_user")
                 .build()
 
             // Extract actions from original notification for bridging
@@ -786,7 +788,7 @@ class NotificationInterceptorService : NotificationListenerService() {
             // Create the notification builder with MessagingStyle
             val builder = NotificationCompat.Builder(this, MIMIC_CHANNEL_ID)
                 .setStyle(messagingStyle)
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
