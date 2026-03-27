@@ -915,10 +915,19 @@ class NotificationInterceptorService : NotificationListenerService() {
                 builder.setDeleteIntent(deletePendingIntent)
             }
 
+            // Log MessagingStyle details before posting (for Android Auto diagnosis)
+            val styleMessages = messagingStyle.messages
+            val userKey = messagingStyle.user.key
+            Log.d(TAG, "MIMIC_DEBUG: About to post ID=$mimicId App=$appName " +
+                "userKey=$userKey msgCount=${styleMessages.size}")
+            styleMessages.forEachIndexed { i, msg ->
+                Log.d(TAG, "MIMIC_DEBUG: msg[$i] personKey=${msg.person?.key} text='${msg.text?.take(30)}'")
+            }
+
             // Post the mimic notification
             notificationManager.notify(mimicId, builder.build())
 
-            Log.d(TAG, "Mimic notification created with MessagingStyle: ID=$mimicId, App=$appName")
+            Log.d(TAG, "MIMIC_DEBUG: notify() returned successfully ID=$mimicId App=$appName")
         } catch (e: Exception) {
             Log.e(TAG, "Error creating mimic notification", e)
 
