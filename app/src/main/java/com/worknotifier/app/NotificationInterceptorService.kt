@@ -843,7 +843,8 @@ class NotificationInterceptorService : NotificationListenerService() {
                     putExtra(EXTRA_ACTION_INDEX, index)
                 }
 
-                val hasRemoteInput = actionInfo.remoteInputs != null && actionInfo.remoteInputs.isNotEmpty()
+                val remoteInputs = actionInfo.remoteInputs
+                val hasRemoteInput = remoteInputs != null && remoteInputs.isNotEmpty()
 
                 // Determine if action needs mutable flag (for RemoteInput)
                 val flags = if (hasRemoteInput) {
@@ -879,8 +880,8 @@ class NotificationInterceptorService : NotificationListenerService() {
                     .setShowsUserInterface(false)
 
                 // If original action has RemoteInput, add it to the mimic action
-                if (hasRemoteInput) {
-                    actionInfo.remoteInputs.forEach { remoteInput ->
+                if (remoteInputs != null) {
+                    remoteInputs.forEach { remoteInput ->
                         // Create a new AndroidX RemoteInput with the same key and label from original
                         val mimicRemoteInput = AndroidXRemoteInput.Builder(remoteInput.resultKey)
                             .setLabel(remoteInput.label ?: "Reply")
