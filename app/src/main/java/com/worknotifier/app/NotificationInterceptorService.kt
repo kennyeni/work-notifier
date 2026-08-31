@@ -786,7 +786,7 @@ class NotificationInterceptorService : NotificationListenerService() {
             // Create the notification builder with MessagingStyle
             val builder = NotificationCompat.Builder(this, MIMIC_CHANNEL_ID)
                 .setStyle(messagingStyle)
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
