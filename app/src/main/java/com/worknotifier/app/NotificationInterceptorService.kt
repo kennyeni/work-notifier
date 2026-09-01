@@ -389,9 +389,15 @@ class NotificationInterceptorService : NotificationListenerService() {
             // 1. Mimic is enabled for this app+profile
             // 2. Notification passes regex filters
             // 3. If Android Auto Only Mode is enabled, must be connected to Android Auto
-            if (NotificationStorage.isMimicEnabled(packageName, profileType) &&
-                NotificationStorage.matchesFilters(interceptedNotification) &&
-                shouldCreateMimic()) {
+            val mimicEnabled = NotificationStorage.isMimicEnabled(packageName, profileType)
+            val matchesFilters = NotificationStorage.matchesFilters(interceptedNotification)
+            val autoModeAllows = shouldCreateMimic()
+            Log.d(TAG, "MIMIC_DEBUG: eligibility app=$appName mimicEnabled=$mimicEnabled " +
+                "matchesFilters=$matchesFilters autoModeAllows=$autoModeAllows " +
+                "androidAutoConnected=${AndroidAutoDetector.isConnectedToAndroidAuto()} " +
+                "connectionStatus=${AndroidAutoDetector.getConnectionStatusString()}")
+
+            if (mimicEnabled && matchesFilters && autoModeAllows) {
                 createMimicNotification(
                     packageName = packageName,
                     appName = appName,
@@ -690,8 +696,11 @@ class NotificationInterceptorService : NotificationListenerService() {
 
             // Create Person objects for MessagingStyle (required for Android Auto)
             val senderName = title ?: appName
+            val senderPersonKey = "$packageName|${profileType.name}|sender"
             val senderPerson = Person.Builder()
                 .setName("$senderName$profileBadge")
+                .setKey(senderPersonKey)
+                .setImportant(true)
                 .apply {
                     appIconBase64?.let { iconBase64 ->
                         decodeBase64ToBitmap(iconBase64)?.let { bitmap ->
@@ -703,7 +712,24 @@ class NotificationInterceptorService : NotificationListenerService() {
 
             val deviceUser = Person.Builder()
                 .setName("You")
+                .setKey("device_user")
                 .build()
+
+            // Android Auto requires a stable key (and prefers setImportant(true)) on every
+            // Person in a MessagingStyle to reliably identify conversation participants.
+            // Person objects lifted from the original notification rarely set these.
+            fun ensureAndroidAutoPerson(originalPerson: Person?): Person {
+                if (originalPerson == null) return senderPerson
+                return Person.Builder()
+                    .setName(MimicNotificationCompliance.resolvePersonName(originalPerson.name, senderName))
+                    .setKey(MimicNotificationCompliance.resolvePersonKey(originalPerson.key, senderPersonKey))
+                    .setImportant(true)
+                    .apply {
+                        (originalPerson.icon ?: senderPerson.icon)?.let { setIcon(it) }
+                        originalPerson.uri?.let { setUri(it) }
+                    }
+                    .build()
+            }
 
             // Extract actions from original notification for bridging
             val originalActions = originalNotification?.actions?.mapNotNull { action ->
@@ -746,10 +772,14 @@ class NotificationInterceptorService : NotificationListenerService() {
                     newStyle.setConversationTitle(it)
                 }
 
+                // Inherit group-conversation flag; Android Auto uses this to decide
+                // whether to render a group header vs. a 1:1 conversation
+                newStyle.setGroupConversation(originalMessagingStyle.isGroupConversation)
+
                 if (messages.isNotEmpty()) {
                     // Add all messages except the last one
                     messages.dropLast(1).forEach { msg ->
-                        newStyle.addMessage(msg.text, msg.timestamp, msg.person)
+                        newStyle.addMessage(msg.text, msg.timestamp, ensureAndroidAutoPerson(msg.person))
                     }
 
                     // Add the last message with appended capability indicator
@@ -758,7 +788,7 @@ class NotificationInterceptorService : NotificationListenerService() {
                     newStyle.addMessage(
                         lastMessageText + capabilityIndicator,
                         lastMessage.timestamp,
-                        lastMessage.person
+                        ensureAndroidAutoPerson(lastMessage.person)
                     )
                 } else {
                     // No messages in original style, add a default message
@@ -776,6 +806,7 @@ class NotificationInterceptorService : NotificationListenerService() {
 
                 NotificationCompat.MessagingStyle(deviceUser)
                     .setConversationTitle("$senderName$profileBadge")
+                    .setGroupConversation(false)
                     .addMessage(
                         messageText,
                         System.currentTimeMillis(),
@@ -784,15 +815,26 @@ class NotificationInterceptorService : NotificationListenerService() {
             }
 
             // Create the notification builder with MessagingStyle
+            // NOTE: small icon MUST be a flat vector drawable, not the adaptive launcher
+            // icon (R.mipmap.ic_launcher) - Android Auto silently drops notifications
+            // whose small icon it can't render, with no error on the phone side.
             val builder = NotificationCompat.Builder(this, MIMIC_CHANNEL_ID)
                 .setStyle(messagingStyle)
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(MimicNotificationCompliance.mimicSmallIconRes())
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
 
             // Create mimic actions that bridge to original notification actions (1:1 mapping)
+            // Android Auto mandates exactly one SEMANTIC_ACTION_REPLY action (single
+            // RemoteInput) and one SEMANTIC_ACTION_MARK_AS_READ action, or it silently
+            // refuses to display the notification - the phone shows it regardless, so
+            // this requirement is easy to violate without any visible symptom. Many apps
+            // never tag their own actions with setSemanticAction(), so bridging the
+            // original tag verbatim isn't enough: force REPLY on any RemoteInput-bearing
+            // action, and track what we actually end up with so gaps can be backfilled.
+            val effectiveSemanticActions = mutableListOf<Int>()
             originalActions.forEachIndexed { index, actionInfo ->
                 val actionIntent = Intent(ACTION_MIMIC_ACTION).apply {
                     setPackage(applicationContext.packageName)
@@ -800,8 +842,11 @@ class NotificationInterceptorService : NotificationListenerService() {
                     putExtra(EXTRA_ACTION_INDEX, index)
                 }
 
+                val remoteInputs = actionInfo.remoteInputs
+                val hasRemoteInput = remoteInputs != null && remoteInputs.isNotEmpty()
+
                 // Determine if action needs mutable flag (for RemoteInput)
-                val flags = if (actionInfo.remoteInputs != null && actionInfo.remoteInputs.isNotEmpty()) {
+                val flags = if (hasRemoteInput) {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
                 } else {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -809,25 +854,31 @@ class NotificationInterceptorService : NotificationListenerService() {
 
                 val actionPendingIntent = PendingIntent.getBroadcast(
                     this,
-                    mimicId + index,
+                    MimicNotificationCompliance.bridgedActionRequestCode(mimicId, index),
                     actionIntent,
                     flags
                 )
 
+                val semanticAction = MimicNotificationCompliance.effectiveSemanticAction(
+                    hasRemoteInput,
+                    actionInfo.semanticAction
+                )
+                effectiveSemanticActions.add(semanticAction)
+
                 // Get action label and icon based on semantic action
-                val (label, icon) = getActionLabelAndIcon(actionInfo.semanticAction)
+                val (label, icon) = getActionLabelAndIcon(semanticAction)
 
                 val actionBuilder = NotificationCompat.Action.Builder(
                     icon,
                     label,
                     actionPendingIntent
                 )
-                    .setSemanticAction(actionInfo.semanticAction)
+                    .setSemanticAction(semanticAction)
                     .setShowsUserInterface(false)
 
                 // If original action has RemoteInput, add it to the mimic action
-                if (actionInfo.remoteInputs != null && actionInfo.remoteInputs.isNotEmpty()) {
-                    actionInfo.remoteInputs.forEach { remoteInput ->
+                if (remoteInputs != null) {
+                    remoteInputs.forEach { remoteInput ->
                         // Create a new AndroidX RemoteInput with the same key and label from original
                         val mimicRemoteInput = AndroidXRemoteInput.Builder(remoteInput.resultKey)
                             .setLabel(remoteInput.label ?: "Reply")
@@ -839,17 +890,29 @@ class NotificationInterceptorService : NotificationListenerService() {
                 builder.addAction(actionBuilder.build())
             }
 
-            // If no original actions, add default Reply and Mark as Read actions (for manual mimics)
-            if (originalActions.isEmpty()) {
-                // Create default Reply action (index -1 indicates no original action to bridge)
+            // Backfill whichever mandatory action bridging didn't provide. Index -1/-2
+            // mean there's no original action to bridge to, so these fall back to
+            // dismissing the mimic (see handleMimicActionBridge) rather than forwarding.
+            val needsReplyBackfill = MimicNotificationCompliance.needsActionBackfill(
+                effectiveSemanticActions, NotificationCompat.Action.SEMANTIC_ACTION_REPLY
+            )
+            val needsMarkAsReadBackfill = MimicNotificationCompliance.needsActionBackfill(
+                effectiveSemanticActions, NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ
+            )
+
+            if (needsReplyBackfill) {
                 val replyIntent = Intent(ACTION_MIMIC_ACTION).apply {
                     setPackage(applicationContext.packageName)
                     putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
                     putExtra(EXTRA_ACTION_INDEX, -1) // No original action to bridge
                 }
+                // Offset request code well clear of any bridged action's `mimicId + index`
+                // range so a coexisting bridged action can't collide with this fallback's
+                // PendingIntent (both use ACTION_MIMIC_ACTION, so a shared request code
+                // would let FLAG_UPDATE_CURRENT silently overwrite one with the other).
                 val replyPendingIntent = PendingIntent.getBroadcast(
                     this,
-                    mimicId,
+                    MimicNotificationCompliance.fallbackReplyRequestCode(mimicId),
                     replyIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
                 )
@@ -865,8 +928,10 @@ class NotificationInterceptorService : NotificationListenerService() {
                     .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
                     .setShowsUserInterface(false)
                     .build()
+                builder.addAction(replyAction)
+            }
 
-                // Create default Mark as Read action (index -2 indicates no original action to bridge)
+            if (needsMarkAsReadBackfill) {
                 val markReadIntent = Intent(ACTION_MIMIC_ACTION).apply {
                     setPackage(applicationContext.packageName)
                     putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
@@ -874,7 +939,7 @@ class NotificationInterceptorService : NotificationListenerService() {
                 }
                 val markReadPendingIntent = PendingIntent.getBroadcast(
                     this,
-                    mimicId + 1,
+                    MimicNotificationCompliance.fallbackMarkAsReadRequestCode(mimicId),
                     markReadIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
@@ -886,8 +951,6 @@ class NotificationInterceptorService : NotificationListenerService() {
                     .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
                     .setShowsUserInterface(false)
                     .build()
-
-                builder.addAction(replyAction)
                 builder.addAction(markReadAction)
             }
 
@@ -914,9 +977,16 @@ class NotificationInterceptorService : NotificationListenerService() {
             }
 
             // Post the mimic notification
-            notificationManager.notify(mimicId, builder.build())
+            val builtNotification = builder.build()
+            val channelImportance = notificationManager.getNotificationChannel(MIMIC_CHANNEL_ID)?.importance
+            Log.d(TAG, "MIMIC_DEBUG: posting id=$mimicId app=$appName channelImportance=$channelImportance " +
+                "isGroupConversation=${messagingStyle.isGroupConversation} " +
+                "messageCount=${messagingStyle.messages.size} " +
+                "actionCount=${builtNotification.actions?.size ?: 0} " +
+                "androidAutoConnected=${AndroidAutoDetector.isConnectedToAndroidAuto()}")
+            notificationManager.notify(mimicId, builtNotification)
 
-            Log.d(TAG, "Mimic notification created with MessagingStyle: ID=$mimicId, App=$appName")
+            Log.d(TAG, "MIMIC_DEBUG: notify() returned successfully for id=$mimicId app=$appName")
         } catch (e: Exception) {
             Log.e(TAG, "Error creating mimic notification", e)
 
