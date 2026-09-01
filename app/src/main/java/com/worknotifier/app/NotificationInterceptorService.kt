@@ -721,8 +721,8 @@ class NotificationInterceptorService : NotificationListenerService() {
             fun ensureAndroidAutoPerson(originalPerson: Person?): Person {
                 if (originalPerson == null) return senderPerson
                 return Person.Builder()
-                    .setName(originalPerson.name ?: senderName)
-                    .setKey(originalPerson.key ?: senderPersonKey)
+                    .setName(MimicNotificationCompliance.resolvePersonName(originalPerson.name, senderName))
+                    .setKey(MimicNotificationCompliance.resolvePersonKey(originalPerson.key, senderPersonKey))
                     .setImportant(true)
                     .apply {
                         (originalPerson.icon ?: senderPerson.icon)?.let { setIcon(it) }
@@ -820,7 +820,7 @@ class NotificationInterceptorService : NotificationListenerService() {
             // whose small icon it can't render, with no error on the phone side.
             val builder = NotificationCompat.Builder(this, MIMIC_CHANNEL_ID)
                 .setStyle(messagingStyle)
-                .setSmallIcon(R.drawable.ic_notification)
+                .setSmallIcon(MimicNotificationCompliance.mimicSmallIconRes())
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
@@ -834,8 +834,7 @@ class NotificationInterceptorService : NotificationListenerService() {
             // never tag their own actions with setSemanticAction(), so bridging the
             // original tag verbatim isn't enough: force REPLY on any RemoteInput-bearing
             // action, and track what we actually end up with so gaps can be backfilled.
-            var bridgedReply = false
-            var bridgedMarkAsRead = false
+            val effectiveSemanticActions = mutableListOf<Int>()
             originalActions.forEachIndexed { index, actionInfo ->
                 val actionIntent = Intent(ACTION_MIMIC_ACTION).apply {
                     setPackage(applicationContext.packageName)
@@ -855,18 +854,16 @@ class NotificationInterceptorService : NotificationListenerService() {
 
                 val actionPendingIntent = PendingIntent.getBroadcast(
                     this,
-                    mimicId + index,
+                    MimicNotificationCompliance.bridgedActionRequestCode(mimicId, index),
                     actionIntent,
                     flags
                 )
 
-                val semanticAction = if (hasRemoteInput) {
-                    NotificationCompat.Action.SEMANTIC_ACTION_REPLY
-                } else {
+                val semanticAction = MimicNotificationCompliance.effectiveSemanticAction(
+                    hasRemoteInput,
                     actionInfo.semanticAction
-                }
-                if (semanticAction == NotificationCompat.Action.SEMANTIC_ACTION_REPLY) bridgedReply = true
-                if (semanticAction == NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ) bridgedMarkAsRead = true
+                )
+                effectiveSemanticActions.add(semanticAction)
 
                 // Get action label and icon based on semantic action
                 val (label, icon) = getActionLabelAndIcon(semanticAction)
@@ -896,7 +893,14 @@ class NotificationInterceptorService : NotificationListenerService() {
             // Backfill whichever mandatory action bridging didn't provide. Index -1/-2
             // mean there's no original action to bridge to, so these fall back to
             // dismissing the mimic (see handleMimicActionBridge) rather than forwarding.
-            if (!bridgedReply) {
+            val needsReplyBackfill = MimicNotificationCompliance.needsActionBackfill(
+                effectiveSemanticActions, NotificationCompat.Action.SEMANTIC_ACTION_REPLY
+            )
+            val needsMarkAsReadBackfill = MimicNotificationCompliance.needsActionBackfill(
+                effectiveSemanticActions, NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ
+            )
+
+            if (needsReplyBackfill) {
                 val replyIntent = Intent(ACTION_MIMIC_ACTION).apply {
                     setPackage(applicationContext.packageName)
                     putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
@@ -908,7 +912,7 @@ class NotificationInterceptorService : NotificationListenerService() {
                 // would let FLAG_UPDATE_CURRENT silently overwrite one with the other).
                 val replyPendingIntent = PendingIntent.getBroadcast(
                     this,
-                    mimicId + 500,
+                    MimicNotificationCompliance.fallbackReplyRequestCode(mimicId),
                     replyIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
                 )
@@ -927,7 +931,7 @@ class NotificationInterceptorService : NotificationListenerService() {
                 builder.addAction(replyAction)
             }
 
-            if (!bridgedMarkAsRead) {
+            if (needsMarkAsReadBackfill) {
                 val markReadIntent = Intent(ACTION_MIMIC_ACTION).apply {
                     setPackage(applicationContext.packageName)
                     putExtra(EXTRA_ORIGINAL_KEY, originalNotificationKey ?: "")
@@ -935,7 +939,7 @@ class NotificationInterceptorService : NotificationListenerService() {
                 }
                 val markReadPendingIntent = PendingIntent.getBroadcast(
                     this,
-                    mimicId + 501,
+                    MimicNotificationCompliance.fallbackMarkAsReadRequestCode(mimicId),
                     markReadIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
