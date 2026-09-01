@@ -262,6 +262,16 @@ GitHub Actions automatically builds on PR and push to main/master with:
 3. Tap "Select Apps" to view intercepted notifications
 4. Optionally grant root access for better profile detection (if rooted with Magisk)
 
+### Testing on Android Auto (sideloaded builds)
+
+This app is never published to Play Store, so every build is a sideloaded/debug APK. Android Auto will **not recognize a sideloaded app at all** — it won't appear in Android Auto's "Customize launcher" list and none of its notifications (test or mimic) can reach the car screen — until developer mode is unlocked in the Android Auto app itself:
+
+1. Open the **Android Auto** app on the phone → Settings → tap the version number (bottom) repeatedly until "Developer mode" is enabled
+2. In Android Auto's developer settings, enable **"Unknown sources"**
+3. Reconnect to the car / Desktop Head Unit — the app should now appear in Customize Launcher
+
+If notifications aren't showing up in Android Auto during testing, check this **before** assuming it's a code bug — it produces the exact same symptom (notification shows on phone, never on the car screen) as an actual notification-formatting bug, and has cost multiple debugging cycles on this project already.
+
 ## Private Space Support
 
 **Success!** NotificationListenerService successfully intercepts Private Space notifications on Android 15 when Private Space is unlocked.
