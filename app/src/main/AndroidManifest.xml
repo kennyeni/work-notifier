@@ -5,6 +5,13 @@
     <!-- Permission to post notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Permission to control DND (Do Not Disturb) mode -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+
+    <!-- Permission to control Bedtime mode (requires ADB grant) -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
     <!-- Package visibility queries for icon packs (Android 11+) -->
     <queries>
         <!-- DynIcons - Material You Dynamic Icon pack -->
@@ -57,6 +64,16 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Android Auto Car App Service for Bedtime mode control -->
+        <service
+            android:name=".BedtimeCarAppService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.PARKING"/>
             </intent-filter>
         </service>
 

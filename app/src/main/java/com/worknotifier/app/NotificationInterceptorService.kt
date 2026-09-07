@@ -49,8 +49,11 @@ class NotificationInterceptorService : NotificationListenerService() {
         private const val MIMIC_NOTIFICATION_ID_BASE = 100000
         private const val ACTION_MIMIC_DISMISSED = "com.worknotifier.app.MIMIC_DISMISSED"
         private const val ACTION_MIMIC_ACTION = "com.worknotifier.app.MIMIC_ACTION"
+        private const val ACTION_AUTO_MODE_SUCCESS = "com.worknotifier.app.AUTO_MODE_SUCCESS"
+        private const val ACTION_AUTO_MODE_ERROR = "com.worknotifier.app.AUTO_MODE_ERROR"
         private const val EXTRA_ORIGINAL_KEY = "original_key"
         private const val EXTRA_ACTION_INDEX = "action_index"
+        private const val EXTRA_MESSAGE = "message"
     }
 
     /**
@@ -132,6 +135,14 @@ class NotificationInterceptorService : NotificationListenerService() {
                     // Handle action bridging from mimic to original notification
                     handleMimicActionBridge(intent)
                 }
+                ACTION_AUTO_MODE_SUCCESS -> {
+                    val message = intent.getStringExtra(EXTRA_MESSAGE) ?: "Mode changed"
+                    createAutoModeNotification(message, isError = false)
+                }
+                ACTION_AUTO_MODE_ERROR -> {
+                    val message = intent.getStringExtra(EXTRA_MESSAGE) ?: "Mode change failed"
+                    createAutoModeNotification(message, isError = true)
+                }
             }
         }
     }
@@ -150,10 +161,12 @@ class NotificationInterceptorService : NotificationListenerService() {
         // Create notification channel for mimic notifications
         createMimicNotificationChannel()
 
-        // Register broadcast receiver for mimic actions
+        // Register broadcast receiver for mimic actions and auto mode notifications
         val filter = IntentFilter().apply {
             addAction(ACTION_MIMIC_DISMISSED)
             addAction(ACTION_MIMIC_ACTION)
+            addAction(ACTION_AUTO_MODE_SUCCESS)
+            addAction(ACTION_AUTO_MODE_ERROR)
         }
         registerReceiver(mimicActionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
 
@@ -389,9 +402,14 @@ class NotificationInterceptorService : NotificationListenerService() {
             // 1. Mimic is enabled for this app+profile
             // 2. Notification passes regex filters
             // 3. If Android Auto Only Mode is enabled, must be connected to Android Auto
-            if (NotificationStorage.isMimicEnabled(packageName, profileType) &&
-                NotificationStorage.matchesFilters(interceptedNotification) &&
-                shouldCreateMimic()) {
+            val mimicEnabled = NotificationStorage.isMimicEnabled(packageName, profileType)
+            val matchesFilters = NotificationStorage.matchesFilters(interceptedNotification)
+            val shouldCreate = shouldCreateMimic()
+
+            Log.d(TAG, "Live notification check - App: $appName, MimicEnabled: $mimicEnabled, MatchesFilters: $matchesFilters, ShouldCreate: $shouldCreate")
+
+            if (mimicEnabled && matchesFilters && shouldCreate) {
+                Log.d(TAG, "Creating live mimic for: $appName")
                 createMimicNotification(
                     packageName = packageName,
                     appName = appName,
@@ -566,6 +584,41 @@ class NotificationInterceptorService : NotificationListenerService() {
     }
 
     /**
+     * Creates a simple notification for Android Auto mode management feedback.
+     * Used by AutoModeManager to display success/error messages.
+     */
+    private fun createAutoModeNotification(message: String, isError: Boolean) {
+        try {
+            val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
+            // Use a fixed ID for auto mode notifications (always replace previous)
+            val notificationId = MIMIC_NOTIFICATION_ID_BASE - 1
+
+            // Create MessagingStyle for Android Auto compatibility
+            val deviceUser = Person.Builder()
+                .setName("Work Notifier")
+                .build()
+
+            val messagingStyle = NotificationCompat.MessagingStyle(deviceUser)
+                .setConversationTitle(if (isError) "Android Auto Mode Error" else "Android Auto Mode")
+                .addMessage(message, System.currentTimeMillis(), deviceUser)
+
+            val notification = NotificationCompat.Builder(this, MIMIC_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setStyle(messagingStyle)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .build()
+
+            notificationManager.notify(notificationId, notification)
+            Log.d(TAG, "Auto mode notification created: $message (error=$isError)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating auto mode notification", e)
+        }
+    }
+
+    /**
      * Creates a mimic notification that duplicates the original notification.
      * Uses MessagingStyle for Android Auto compatibility.
      */
@@ -735,6 +788,25 @@ class NotificationInterceptorService : NotificationListenerService() {
                 "\nℹ️ Reply not available"
             }
 
+            // Helper function to ensure Person has required Android Auto properties
+            fun ensurePersonHasRequiredProperties(originalPerson: Person?): Person {
+                if (originalPerson == null) return senderPerson
+
+                // Rebuild Person with Android Auto required properties
+                val builder = Person.Builder()
+                    .setName(originalPerson.name ?: senderName)
+                    .setKey(originalPerson.key ?: "${packageName}_${System.currentTimeMillis()}")
+                    .setImportant(true)
+
+                // Preserve icon if available
+                originalPerson.icon?.let { builder.setIcon(it) }
+
+                // Preserve URI if available
+                originalPerson.uri?.let { builder.setUri(it) }
+
+                return builder.build()
+            }
+
             // Create or recreate MessagingStyle for Android Auto compatibility
             val messagingStyle = if (originalMessagingStyle != null) {
                 // Use original MessagingStyle and append indicator to last message
@@ -746,19 +818,24 @@ class NotificationInterceptorService : NotificationListenerService() {
                     newStyle.setConversationTitle(it)
                 }
 
+                // CRITICAL: Inherit isGroupConversation from original (required for Android Auto)
+                newStyle.setGroupConversation(originalMessagingStyle.isGroupConversation)
+
                 if (messages.isNotEmpty()) {
                     // Add all messages except the last one
                     messages.dropLast(1).forEach { msg ->
-                        newStyle.addMessage(msg.text, msg.timestamp, msg.person)
+                        val enhancedPerson = ensurePersonHasRequiredProperties(msg.person)
+                        newStyle.addMessage(msg.text, msg.timestamp, enhancedPerson)
                     }
 
                     // Add the last message with appended capability indicator
                     val lastMessage = messages.last()
                     val lastMessageText = lastMessage.text?.toString() ?: ""
+                    val enhancedLastPerson = ensurePersonHasRequiredProperties(lastMessage.person)
                     newStyle.addMessage(
                         lastMessageText + capabilityIndicator,
                         lastMessage.timestamp,
-                        lastMessage.person
+                        enhancedLastPerson
                     )
                 } else {
                     // No messages in original style, add a default message
@@ -786,7 +863,7 @@ class NotificationInterceptorService : NotificationListenerService() {
             // Create the notification builder with MessagingStyle
             val builder = NotificationCompat.Builder(this, MIMIC_CHANNEL_ID)
                 .setStyle(messagingStyle)
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
@@ -914,9 +991,10 @@ class NotificationInterceptorService : NotificationListenerService() {
             }
 
             // Post the mimic notification
-            notificationManager.notify(mimicId, builder.build())
+            val builtNotification = builder.build()
+            notificationManager.notify(mimicId, builtNotification)
 
-            Log.d(TAG, "Mimic notification created with MessagingStyle: ID=$mimicId, App=$appName")
+            Log.d(TAG, "Mimic notification created with MessagingStyle: ID=$mimicId, App=$appName, isManual=${originalNotificationKey == null}")
         } catch (e: Exception) {
             Log.e(TAG, "Error creating mimic notification", e)
 
