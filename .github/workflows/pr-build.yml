@@ -65,6 +65,9 @@ jobs:
         EOF
 
     - name: Build with Gradle
+      env:
+        # PR head commit (not the synthetic merge commit) so versionName maps to a real commit
+        BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       run: ./gradlew build --stacktrace --build-cache
 
     - name: Verify keystore was created
@@ -84,7 +87,7 @@ jobs:
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug
+        name: app-debug-${{ github.event.pull_request.head.sha || github.sha }}
         path: app/build/outputs/apk/debug/app-debug.apk
         retention-days: 7
 
