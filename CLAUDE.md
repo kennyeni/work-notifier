@@ -69,6 +69,7 @@ work-notifier/
 │   │   ├── MainActivity.kt
 │   │   ├── MessagingService.kt
 │   │   ├── NotificationInterceptorService.kt  # Core interception logic
+│   │   ├── MimicNotificationCompliance.kt    # Pure Android Auto mimic-notification rules (unit tested)
 │   │   ├── InterceptedAppsActivity.kt        # Display intercepted apps
 │   │   ├── PrivateLauncherActivity.kt        # Create shortcuts for Private apps
 │   │   ├── data/
@@ -77,6 +78,8 @@ work-notifier/
 │   │   └── utils/
 │   │       ├── AndroidAutoDetector.kt        # Android Auto detection utility
 │   │       └── RootUtils.kt                  # Optional root features
+│   ├── src/test/java/com/worknotifier/app/
+│   │   └── MimicNotificationComplianceTest.kt  # Regression tests, runs in CI via `./gradlew build`
 │   └── build.gradle
 ├── build_jks.gradle          # Deterministic keystore generation
 └── settings.gradle
@@ -189,6 +192,72 @@ The system automatically detects which pattern each app uses by examining the no
 - Conditionally applies content hash tracking only for threaded conversations
 - Tracks mimic relationships for two-way dismissal (dismiss mimic → dismiss originals)
 
+### Android Auto Mimic Notification: How We Got It Working
+
+Mimic notifications reliably posted and displayed correctly on the phone from very early on, but
+were never confirmed to actually display on the Android Auto **car screen** despite many prior fix
+attempts (PRs #10, #12, #16, #17, plus several unmerged branches). Every one of those attempts
+guessed at the notification's structure. The actual fix required finding two things that were
+*not* about the notification's structure at all, plus one real structural bug - documented here so
+this doesn't get silently broken again, and isn't re-debugged from scratch.
+
+**1. It usually isn't a code bug at all - rule these out first:**
+- Android Auto won't recognize a sideloaded/debug build until Developer mode + "Unknown sources"
+  are enabled inside the Android Auto app itself. See "Testing on Android Auto" above. This alone
+  produces the exact symptom of a code bug (shows on phone, never on car) with zero code involved.
+- Mimic notification channel importance (`Settings → Apps → Work Notifier → Notifications →
+  Mimic Notifications`) must not be below Default/HIGH. `NotificationManager.createNotificationChannel()`
+  is a no-op once a channel ID exists on-device, so bumping the importance in code (as an earlier
+  commit did, `IMPORTANCE_DEFAULT` → `IMPORTANCE_HIGH`) never retroactively fixes it on an
+  existing install where the channel was already created - only a fresh install (or the user
+  manually raising it) does.
+
+**2. The real structural bug, once environment issues are ruled out:** Android Auto silently
+refuses to display a `MessagingStyle` notification unless it has both a `SEMANTIC_ACTION_REPLY`
+action (with exactly one RemoteInput) and a `SEMANTIC_ACTION_MARK_AS_READ` action - undocumented
+in any error or log, the notification just never appears on the car screen while displaying
+normally on the phone. `createMimicNotification()` bridges the *original* notification's own
+actions 1:1, but most source apps never call `setSemanticAction()` on their own actions, so a
+bridged Reply action usually carried `SEMANTIC_ACTION_NONE` and there was often no
+`SEMANTIC_ACTION_MARK_AS_READ` action at all - Auto's mandatory-action check silently failed. The
+"Send Test Notification" button was never affected because it builds its own explicitly-tagged
+actions from scratch instead of bridging.
+
+**Secondary fixes bundled in alongside it** (real, but less likely to be the sole cause - keep
+them, they're all things Android Auto's documentation says a well-formed `MessagingStyle`
+notification should have):
+- Small icon must be a flat vector (`R.drawable.ic_notification`), not the adaptive launcher icon
+  (`R.mipmap.ic_launcher`) - Android Auto can silently fail to render adaptive icons as a status
+  icon.
+- Every `Person` in the `MessagingStyle` (sender, device user, and any message's participant) needs
+  a stable `.setKey()` and `.setImportant(true)` so Android Auto can identify conversation
+  participants.
+- `MessagingStyle.setGroupConversation()` should be called explicitly in every code path rather
+  than left to Android's inference.
+
+**A bug introduced and fixed along the way, worth knowing about if this code changes again:**
+bridged actions and the backfilled Reply/Mark-as-Read actions can coexist in the same notification
+(previously mutually exclusive, before the mandatory-action fix above). Both use the
+`ACTION_MIMIC_ACTION` intent action, so if their `PendingIntent` request codes ever collide,
+`FLAG_UPDATE_CURRENT` will silently let one overwrite the other. See
+`MimicNotificationCompliance.FALLBACK_REPLY_REQUEST_CODE_OFFSET` /
+`FALLBACK_MARK_AS_READ_REQUEST_CODE_OFFSET` below - they must stay well clear of any bridged
+action's `mimicId + index` range.
+
+**Regression coverage:** the decision logic behind all of the structural fixes above (which
+semantic action to use, whether to backfill Reply/Mark-as-Read, PendingIntent request-code
+allocation, Person key/name fallback, and the small icon choice) is extracted into
+`MimicNotificationCompliance.kt` as pure, Android-framework-free functions specifically so it can
+be unit tested without a device or emulator - see
+`app/src/test/java/com/worknotifier/app/MimicNotificationComplianceTest.kt`, which runs
+automatically in CI (`./gradlew build` runs `test` as part of `check`). If mimic notifications ever
+stop showing on Android Auto again: run these tests first, then re-check the two environment gotchas
+in section 1 above, before assuming it's a new structural bug. `NotificationInterceptorService`
+also logs `MIMIC_DEBUG:` lines at the mimic-eligibility decision and immediately before `notify()`
+(channel importance, action count, group-conversation flag, live Auto connection state) - pull
+these via `adb logcat -d | grep MIMIC_DEBUG` after a real car test if the unit tests all pass but
+it's still not showing.
+
 ### AndroidAutoDetector.kt
 Utility for detecting Android Auto connection status.
 
@@ -224,6 +293,11 @@ If root access is available (Magisk), the app can:
 **Build debug APK:**
 ```bash
 ./gradlew assembleDebug
+```
+
+**Run unit tests** (JVM, no device/emulator needed - runs automatically as part of `./gradlew build` in CI):
+```bash
+./gradlew test
 ```
 
 **Build and deploy (cleans, builds, and installs via ADB):**
