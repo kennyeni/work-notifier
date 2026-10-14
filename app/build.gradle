@@ -14,6 +14,25 @@ if (localPropsFile.exists()) {
     apply from: rootProject.file('build_jks.gradle')
 }
 
+// Build identity: stamp the git short SHA into versionName so App info shows exactly which
+// commit is installed (e.g. "1.1+bd4d117"). CI sets BUILD_SHA to the PR *head* commit (the
+// checked-out commit on pull_request is a synthetic merge commit nobody can look up).
+// Local builds fall back to `git rev-parse` and append "-dirty" for uncommitted changes.
+def baseVersionName = "1.1"
+def gitShortSha = {
+    def ciSha = System.getenv("BUILD_SHA")
+    if (ciSha) return ciSha.take(7)
+    try {
+        def sha = providers.exec { commandLine("git", "rev-parse", "--short=7", "HEAD") }
+                .standardOutput.asText.get().trim()
+        def dirty = !providers.exec { commandLine("git", "status", "--porcelain", "--untracked-files=no") }
+                .standardOutput.asText.get().trim().isEmpty()
+        return dirty ? "${sha}-dirty" : sha
+    } catch (Exception ignored) {
+        return "nogit"
+    }
+}()
+
 android {
     namespace 'com.worknotifier.app'
     compileSdk 35
@@ -24,7 +43,7 @@ android {
         minSdk 29
         targetSdk 35
         versionCode 2
-        versionName "1.1"
+        versionName "${baseVersionName}+${gitShortSha}"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }

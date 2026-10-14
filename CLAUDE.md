@@ -255,6 +255,10 @@ GitHub Actions automatically builds on PR and push to main/master with:
 - Lint validation
 - 7-day artifact retention (`app-debug.apk`, `lint-results-debug.html`)
 
+### Build Identification (versionName)
+
+`versionName` is `1.1+<git short sha>` (e.g. `1.1+bd4d117`), so Settings → Apps → Work Notifier (or `adb shell dumpsys package com.worknotifier.app | grep versionName`) shows exactly which commit is installed. CI passes `BUILD_SHA` (the PR *head* commit, not GitHub's synthetic merge commit) and names the artifact `app-debug-<sha>`. Local builds use `git rev-parse` and append `-dirty` when tracked files are modified. Bump `baseVersionName` in `app/build.gradle` for releases; `versionCode` is unchanged.
+
 ## Installation & Testing
 
 1. Install the APK (via `./build-and-deploy.sh` or `adb install app/build/outputs/apk/debug/app-debug.apk`)
