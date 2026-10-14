@@ -272,6 +272,13 @@ This app is never published to Play Store, so every build is a sideloaded/debug 
 
 If notifications aren't showing up in Android Auto during testing, check this **before** assuming it's a code bug — it produces the exact same symptom (notification shows on phone, never on the car screen) as an actual notification-formatting bug, and has cost multiple debugging cycles on this project already.
 
+### KNOWN GOOD: Android Auto mimic notification baseline
+
+**The mimic-notification code in `NotificationInterceptorService.kt` as of PR "Ship car-tested Android Auto mimic fix" is the exact code verified working on a real device and car** (PR #24 @ `c3799af`, CI run #127, installed 2026-08-31). Do not refactor it without re-testing on the car; the unrefactored/untested follow-up (tests + `MimicNotificationCompliance.kt` extraction) is deliberately left in PR #24 (`90571e4`).
+
+- **Revert target** if this fix must be undone: `main` @ `0ef1c2e` (before the fix). Merge this change as a *squash* so a single `git revert <squash-sha>` undoes it cleanly.
+- If a later change breaks Android Auto, diff against this baseline first: `git diff c3799af -- app/src/main/java/com/worknotifier/app/NotificationInterceptorService.kt`.
+
 ## Private Space Support
 
 **Success!** NotificationListenerService successfully intercepts Private Space notifications on Android 15 when Private Space is unlocked.
