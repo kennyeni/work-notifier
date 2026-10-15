@@ -58,6 +58,35 @@ The app uses `NotificationListenerService` to intercept notifications from:
 - Supports both Android Auto (projection) and Android Automotive OS (native)
 - No special permissions required for detection
 
+### DND and Bedtime Mode Management
+- Automatically manages Do Not Disturb (DND) and Bedtime mode when connecting to Android Auto
+- **When connecting to Android Auto**:
+  - Detects if DND is active, saves state, and disables it
+  - Detects if Bedtime mode is active, saves state, and disables it
+  - Creates a mimic notification confirming which modes were disabled
+- **When disconnecting from Android Auto**:
+  - Restores DND if it was previously active
+  - Restores Bedtime mode if it was previously active
+  - Creates a mimic notification confirming which modes were restored
+- Fully automatic operation (no user toggles required)
+- **Root-based Permission Setup** (silent, on app startup):
+  - Grants `WRITE_SECURE_SETTINGS` via root only if it is not already granted
+  - No-op (no root prompt, no notification, no settings screen) when already granted or the device is not rooted
+  - DND access cannot be granted by root: enable it once in Settings → Notifications → Do Not Disturb access
+- **Test Button**: "Test DND & Bedtime" button in MainActivity
+  - Manually tests mode toggling: disables → waits 3 seconds → re-enables
+  - Shows mimic notifications for each step with checkmarks/X marks
+  - Useful for verifying permissions and functionality
+- Requires permissions:
+  - `ACCESS_NOTIFICATION_POLICY` for DND control (user must enable in Settings)
+  - Root access for Bedtime mode control (auto-checked on startup)
+- Uses the NotificationManager API for DND, with a root fallback (see Implementation Notes)
+- **Bedtime Mode Control**:
+  - Toggles Bedtime mode by clicking Quick Settings tile via root: `cmd statusbar click-tile`
+  - Uses Digital Wellbeing's GrayscaleTileService component
+  - Requires root access to execute tile click command
+  - More reliable than undocumented Settings.Secure keys
+
 ## Project Structure
 
 ```
@@ -77,6 +106,7 @@ work-notifier/
 │   │   │   └── NotificationStorage.kt        # Persistent and in-memory storage
 │   │   └── utils/
 │   │       ├── AndroidAutoDetector.kt        # Android Auto detection utility
+│   │       ├── AutoModeManager.kt            # DND and Bedtime mode management
 │   │       └── RootUtils.kt                  # Optional root features
 │   ├── src/test/java/com/worknotifier/app/
 │   │   └── MimicNotificationComplianceTest.kt  # Regression tests, runs in CI via `./gradlew build`
@@ -279,6 +309,55 @@ Utility for detecting Android Auto connection status.
 - `getConnectionType()`: Get current connection type code
 - `getConnectionStatusString()`: Get human-readable status
 
+### AutoModeManager.kt
+Manages DND and Bedtime mode state when connecting/disconnecting from Android Auto.
+
+**Key Features:**
+- Automatic operation with no user interaction required
+- Observes Android Auto connection state via `CarConnection` API
+- Saves mode states before disabling them
+- Restores modes to previous state on disconnect
+- Creates mimic notifications for user feedback
+- Thread-safe singleton implementation
+- Gracefully handles permission failures
+
+**Behavior:**
+- **On Android Auto Connect**:
+  - Checks if DND is active and saves state
+  - Checks if Bedtime mode is active and saves state
+  - Disables both modes to ensure notifications work
+  - Creates success notification listing disabled modes
+- **On Android Auto Disconnect**:
+  - Restores DND if it was previously active
+  - Restores Bedtime mode if it was previously active
+  - Creates success notification listing restored modes
+  - Clears saved state
+
+**Permissions:**
+- `ACCESS_NOTIFICATION_POLICY`: For DND control (user must enable in Settings)
+- Root access: Required for Bedtime mode control (auto-checked on startup)
+
+**Public Methods:**
+- `initialize(context)`: Initialize manager and start observing Android Auto connection
+- `setupPermissionsWithRoot()`: Silently grant WRITE_SECURE_SETTINGS via root if not already granted (called on app startup)
+- `testToggleModes()`: Manually test DND/Bedtime toggling with step-by-step notifications
+
+**Implementation Notes:**
+- DND detection: Uses `NotificationManager.currentInterruptionFilter`
+- DND control: Uses `NotificationManager.setInterruptionFilter()`, then verifies the real filter changed. On Android 9+ an app cannot switch off DND that the user or system (Bedtime mode, schedules) turned on, and the call still returns without error, so it falls back to root: `cmd notification set_dnd`, then `settings put global zen_mode <0-3>` (applied by the system as a manual change), checking the real filter after each step. The exact original filter (priority/alarms/none) is saved and restored
+- Bedtime mode detection: Checks `accessibility_display_grayscale` Settings.Secure value
+- Bedtime mode control: Clicks Quick Settings tile via root command:
+  - `cmd statusbar click-tile com.google.android.apps.wellbeing/com.google.android.apps.wellbeing.screen.ui.GrayscaleTileService`
+- Tile clicking is more reliable than undocumented Settings.Secure keys
+- **Bedtime mode owns an automatic DND rule.** While it is active the system silently ignores every manual attempt to turn DND off (the API, `cmd notification set_dnd`, and `settings put global zen_mode 0` all return without error and change nothing). So on connect, Bedtime mode is switched off FIRST, then DND is checked/disabled. Bedtime detection (grayscale setting) is not reliable on every device, so if DND is still on the Bedtime tile is clicked blindly; if DND did not change the click is undone, otherwise it is remembered and undone on disconnect
+- Restore order is the reverse: Bedtime mode first (it recreates its DND rule), then the saved DND filter only if it is not already in place
+- Includes 500ms delay after tile click for system to process the change
+- Notifications: Sends broadcast intents to NotificationInterceptorService for mimic notification creation. The feedback notification carries the mandatory REPLY and MARK_AS_READ actions and keyed Persons so Android Auto will show it
+- Threading: connect/disconnect handling runs on a single background thread (root commands + sleeps must never run on the main thread)
+- Reconnect safety: saved mode state is only cleared on disconnect, so a reconnect after the app process died mid-drive keeps the original state instead of overwriting it
+- Root permission grant: Uses `RootUtils.executeRootCommand()` to run `pm grant` command
+- Test function: Uses coroutines with delays for step-by-step demonstration
+
 ### RootUtils.kt (Optional)
 If root access is available (Magisk), the app can:
 - Detect profile names via `pm list users`
@@ -419,7 +498,7 @@ History of verified baselines (newest first), and what to revert to if something
 
 ---
 
-**Last Updated**: 2026-01-29
+**Last Updated**: 2026-02-03
 **Android Version**: Android 15 (API 35)
 **Build System**: Gradle 8.2
 **Deduplication Strategy**: Key-based storage, adaptive mimic (threaded vs separate)
