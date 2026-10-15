@@ -352,10 +352,19 @@ If notifications aren't showing up in Android Auto during testing, check this **
 
 ### KNOWN GOOD: Android Auto mimic notification baseline
 
-**The mimic-notification code in `NotificationInterceptorService.kt` as of PR "Ship car-tested Android Auto mimic fix" is the exact code verified working on a real device and car** (PR #24 @ `c3799af`, CI run #127, installed 2026-08-31). Do not refactor it without re-testing on the car; the unrefactored/untested follow-up (tests + `MimicNotificationCompliance.kt` extraction) is deliberately left in PR #24 (`90571e4`).
+**Current baseline: `main` @ `f36d6aa` (CI run #140, `versionName` `1.1+f36d6aa`), confirmed working on a real phone and car in Oct 2026.** This includes the `MimicNotificationCompliance.kt` extraction and its unit tests. Do not change the mimic-notification code in `NotificationInterceptorService.kt` without re-testing on the car.
 
-- **Revert target** if this fix must be undone: `main` @ `0ef1c2e` (before the fix). Merge this change as a *squash* so a single `git revert <squash-sha>` undoes it cleanly.
-- If a later change breaks Android Auto, diff against this baseline first: `git diff c3799af -- app/src/main/java/com/worknotifier/app/NotificationInterceptorService.kt`.
+History of verified baselines (newest first), and what to revert to if something breaks:
+
+| Baseline | What it is | Revert to |
+|---|---|---|
+| `f36d6aa` (run #140) | Fix + `MimicNotificationCompliance.kt` refactor + tests (PR #28) | `7c92589` (run #138) undoes only the refactor |
+| `7c92589` (run #138) | Exact `c3799af` mimic code + `versionName` SHA stamping | `0ef1c2e` undoes the whole Android Auto fix |
+| `c3799af` (run #127) | The original car-tested fix (PR #24, installed 2026-08-31) | - |
+
+- To undo only the refactor, `git revert` the squash/merge commit of PR #28.
+- If a later change breaks Android Auto, diff against the baseline first: `git diff f36d6aa -- app/src/main/java/com/worknotifier/app/NotificationInterceptorService.kt app/src/main/java/com/worknotifier/app/MimicNotificationCompliance.kt`.
+- Install a specific build by its `versionName` suffix: the CI artifact is named `app-debug-<sha>`.
 
 ## Private Space Support
 
