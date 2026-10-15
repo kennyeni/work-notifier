@@ -66,4 +66,7 @@
     <string name="private_launcher_description">Tap any app to create a launcher shortcut on your home screen.</string>
     <string name="create_shortcut">Create Shortcut</string>
     <string name="no_private_apps_found">No Private Space apps found.\n\nMake sure Private Space is unlocked.\n\nIf root access is available, all apps will be shown.\nOtherwise, only apps that have sent notifications are shown.</string>
+
+    <!-- DND and Bedtime Mode Test -->
+    <string name="test_dnd_bedtime">Test DND &amp; Bedtime</string>
 </resources>

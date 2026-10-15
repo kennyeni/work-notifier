@@ -49,8 +49,21 @@ class NotificationInterceptorService : NotificationListenerService() {
         private const val MIMIC_NOTIFICATION_ID_BASE = 100000
         private const val ACTION_MIMIC_DISMISSED = "com.worknotifier.app.MIMIC_DISMISSED"
         private const val ACTION_MIMIC_ACTION = "com.worknotifier.app.MIMIC_ACTION"
+        private const val ACTION_AUTO_MODE_SUCCESS = "com.worknotifier.app.AUTO_MODE_SUCCESS"
+        private const val ACTION_AUTO_MODE_ERROR = "com.worknotifier.app.AUTO_MODE_ERROR"
         private const val EXTRA_ORIGINAL_KEY = "original_key"
         private const val EXTRA_ACTION_INDEX = "action_index"
+        private const val EXTRA_MESSAGE = "message"
+
+        // Auto-mode feedback notification. Its ID and PendingIntent request codes sit below
+        // MIMIC_NOTIFICATION_ID_BASE: every mimic request code is `mimicId + offset` (>= 100000),
+        // and both use ACTION_MIMIC_ACTION, so a shared code would let FLAG_UPDATE_CURRENT
+        // silently overwrite one PendingIntent with the other.
+        private const val AUTO_MODE_NOTIFICATION_ID = MIMIC_NOTIFICATION_ID_BASE - 1
+        // Sentinel original key so its actions can be told apart from manual mimics
+        private const val AUTO_MODE_ORIGINAL_KEY = "auto_mode_feedback"
+        private const val AUTO_MODE_REPLY_REQUEST_CODE = 90001
+        private const val AUTO_MODE_MARK_READ_REQUEST_CODE = 90002
     }
 
     /**
@@ -132,6 +145,14 @@ class NotificationInterceptorService : NotificationListenerService() {
                     // Handle action bridging from mimic to original notification
                     handleMimicActionBridge(intent)
                 }
+                ACTION_AUTO_MODE_SUCCESS -> {
+                    val message = intent.getStringExtra(EXTRA_MESSAGE) ?: "Mode changed"
+                    createAutoModeNotification(message, isError = false)
+                }
+                ACTION_AUTO_MODE_ERROR -> {
+                    val message = intent.getStringExtra(EXTRA_MESSAGE) ?: "Mode change failed"
+                    createAutoModeNotification(message, isError = true)
+                }
             }
         }
     }
@@ -150,10 +171,12 @@ class NotificationInterceptorService : NotificationListenerService() {
         // Create notification channel for mimic notifications
         createMimicNotificationChannel()
 
-        // Register broadcast receiver for mimic actions
+        // Register broadcast receiver for mimic actions and auto mode notifications
         val filter = IntentFilter().apply {
             addAction(ACTION_MIMIC_DISMISSED)
             addAction(ACTION_MIMIC_ACTION)
+            addAction(ACTION_AUTO_MODE_SUCCESS)
+            addAction(ACTION_AUTO_MODE_ERROR)
         }
         registerReceiver(mimicActionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
 
@@ -195,7 +218,11 @@ class NotificationInterceptorService : NotificationListenerService() {
                 // For manual mimics, there's no original notification to forward the action to
                 // Just dismiss the mimic notification since user interacted with it
                 // The mimic ID can be found from the originalKey if it's not empty
-                if (!originalKey.isNullOrEmpty()) {
+                if (originalKey == AUTO_MODE_ORIGINAL_KEY) {
+                    // Auto-mode feedback notification has no original; its actions just dismiss it
+                    val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+                    notificationManager.cancel(AUTO_MODE_NOTIFICATION_ID)
+                } else if (!originalKey.isNullOrEmpty()) {
                     originalToMimic[originalKey]?.let { mimicId ->
                         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
                         notificationManager.cancel(mimicId)
@@ -569,6 +596,87 @@ class NotificationInterceptorService : NotificationListenerService() {
             description = "Mimic notifications from other apps"
         }
         notificationManager.createNotificationChannel(channel)
+    }
+
+    /**
+     * Creates a simple notification for Android Auto mode management feedback.
+     * Used by AutoModeManager to display success/error messages.
+     */
+    private fun createAutoModeNotification(message: String, isError: Boolean) {
+        try {
+            val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
+            // Android Auto silently refuses MessagingStyle notifications whose Persons lack a
+            // key or that lack the mandatory REPLY + MARK_AS_READ actions (see CLAUDE.md,
+            // "Android Auto Mimic Notification: How We Got It Working"), so build both.
+            val deviceUser = Person.Builder()
+                .setName("Work Notifier")
+                .setKey("$packageName|auto_mode|device")
+                .setImportant(true)
+                .build()
+
+            val messagingStyle = NotificationCompat.MessagingStyle(deviceUser)
+                .setConversationTitle(if (isError) "Android Auto Mode Error" else "Android Auto Mode")
+                .setGroupConversation(false)
+                .addMessage(message, System.currentTimeMillis(), deviceUser)
+
+            // No original notification to bridge to: index -1/-2 with the sentinel key just
+            // dismisses this notification (see handleMimicActionBridge).
+            val replyIntent = Intent(ACTION_MIMIC_ACTION).apply {
+                setPackage(applicationContext.packageName)
+                putExtra(EXTRA_ORIGINAL_KEY, AUTO_MODE_ORIGINAL_KEY)
+                putExtra(EXTRA_ACTION_INDEX, -1)
+            }
+            val replyAction = NotificationCompat.Action.Builder(
+                R.drawable.ic_reply,
+                "Reply",
+                PendingIntent.getBroadcast(
+                    this,
+                    AUTO_MODE_REPLY_REQUEST_CODE,
+                    replyIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                )
+            )
+                .addRemoteInput(AndroidXRemoteInput.Builder("reply_key").setLabel("Reply").build())
+                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+                .setShowsUserInterface(false)
+                .build()
+
+            val markReadIntent = Intent(ACTION_MIMIC_ACTION).apply {
+                setPackage(applicationContext.packageName)
+                putExtra(EXTRA_ORIGINAL_KEY, AUTO_MODE_ORIGINAL_KEY)
+                putExtra(EXTRA_ACTION_INDEX, -2)
+            }
+            val markReadAction = NotificationCompat.Action.Builder(
+                R.drawable.ic_mark_read,
+                "Mark as Read",
+                PendingIntent.getBroadcast(
+                    this,
+                    AUTO_MODE_MARK_READ_REQUEST_CODE,
+                    markReadIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            )
+                .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+                .setShowsUserInterface(false)
+                .build()
+
+            val notification = NotificationCompat.Builder(this, MIMIC_CHANNEL_ID)
+                .setSmallIcon(MimicNotificationCompliance.mimicSmallIconRes())
+                .setStyle(messagingStyle)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setAutoCancel(true)
+                .addAction(replyAction)
+                .addAction(markReadAction)
+                .build()
+
+            // Fixed ID: always replaces the previous auto-mode notification
+            notificationManager.notify(AUTO_MODE_NOTIFICATION_ID, notification)
+            Log.d(TAG, "Auto mode notification created: $message (error=$isError)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating auto mode notification", e)
+        }
     }
 
     /**
